@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    env:
+      DATABASE_URL: postgresql://snip:snip@localhost:5432/snip
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/setup@c9883cc79df532ad1a7b81bf9ab944ceb090d65c # v2.0.0
+        with:
+          runtime: node@26
+          cache: true
+      - run: pnpm prisma generate
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm build

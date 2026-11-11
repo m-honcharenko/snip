@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { generateCode } from './code.generator.js';
@@ -42,5 +43,16 @@ export class LinksService {
 
   findByCode(code: string) {
     return this.prisma.link.findUnique({ where: { code } });
+  }
+
+  async getByCodeOrThrow(code: string) {
+    const link = await this.findByCode(code);
+    if (!link) throw new NotFoundException('Link not found');
+    return link;
+  }
+
+  async deleteByCode(code: string): Promise<boolean> {
+    const { count } = await this.prisma.link.deleteMany({ where: { code } });
+    return count > 0;
   }
 }

@@ -30,7 +30,7 @@ export class HealthController {
       await this.prisma.$queryRaw`SELECT 1`;
       return { status: 'ok', db: 'up' };
     } catch {
-      throw new ServiceUnavailableException({ status: 'error', db: 'down' });
+      throw new ServiceUnavailableException('Database is unreachable');
     }
   }
 }

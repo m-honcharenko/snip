@@ -9,8 +9,12 @@ export const createLinkSchema = z.object({
     .max(MAX_URL_LENGTH)
     .refine(isPublicHttpUrl, {
       message: 'URL must be a public http(s) address',
-    }),
-  expiresAt: z.iso.datetime().optional(),
+    })
+    .describe('Public http(s) URL to shorten'),
+  expiresAt: z.iso
+    .datetime()
+    .describe('Expiration date (ISO 8601), must be in the future')
+    .optional(),
 });
 
 export type CreateLinkInput = z.infer<typeof createLinkSchema>;

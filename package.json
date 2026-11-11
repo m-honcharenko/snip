@@ -9,7 +9,6 @@
   "packageManager": "pnpm@12.14.0",
   "scripts": {
     "build": "nest build",
-    "deploy": "nest deploy",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
@@ -41,11 +40,10 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
-    "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
     "@types/express": "^5.0.0",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.6",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^5.0.5",
     "dotenv": "^18.0.8",

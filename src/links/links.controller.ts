@@ -8,6 +8,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -19,7 +20,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Link } from '../generated/prisma/client.js';
-import { createLinkSchema, type CreateLinkInput } from './links.schemas.js';
+import {
+  createLinkSchema,
+  type ListLinksQuery,
+  listLinksQuerySchema,
+  type CreateLinkInput,
+} from './links.schemas.js';
 import { LinksService } from './links.service.js';
 
 const LINK_RESPONSE_SCHEMA = {
@@ -57,6 +63,33 @@ export class LinksController {
   })
   async create(@Body({ schema: createLinkSchema }) input: CreateLinkInput) {
     return toLinkResponse(await this.links.create(input));
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List links, newest first' })
+  @ApiOkResponse({
+    description: 'A page of links',
+    schema: {
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: LINK_RESPONSE_SCHEMA },
+        page: { type: 'integer', example: 1 },
+        limit: { type: 'integer', example: 20 },
+        total: { type: 'integer', example: 42 },
+        totalPages: { type: 'integer', example: 3 },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Invalid page or limit' })
+  async list(@Query({ schema: listLinksQuerySchema }) query: ListLinksQuery) {
+    const { items, total } = await this.links.list(query);
+    return {
+      items: items.map(toLinkResponse),
+      page: query.page,
+      limit: query.limit,
+      total,
+      totalPages: Math.ceil(total / query.limit),
+    };
   }
 
   @Get(':code')

@@ -25,6 +25,7 @@ import {
   type ListLinksQuery,
   listLinksQuerySchema,
   type CreateLinkInput,
+  codeSchema,
 } from './links.schemas.js';
 import { LinksService } from './links.service.js';
 
@@ -98,8 +99,9 @@ export class LinksController {
     description: 'Link metadata (expired links are returned too)',
     schema: LINK_RESPONSE_SCHEMA,
   })
+  @ApiBadRequestResponse({ description: 'Malformed link code' })
   @ApiNotFoundResponse({ description: 'No link with this code' })
-  async get(@Param('code') code: string) {
+  async get(@Param('code', { schema: codeSchema }) code: string) {
     return toLinkResponse(await this.links.getByCodeOrThrow(code));
   }
 
@@ -107,8 +109,9 @@ export class LinksController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a link' })
   @ApiNoContentResponse({ description: 'The link was deleted' })
+  @ApiBadRequestResponse({ description: 'Malformed link code' })
   @ApiNotFoundResponse({ description: 'No link with this code' })
-  async remove(@Param('code') code: string) {
+  async remove(@Param('code', { schema: codeSchema }) code: string) {
     const deleted = await this.links.deleteByCode(code);
     if (!deleted) throw new NotFoundException('Link not found');
   }

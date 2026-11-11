@@ -25,3 +25,8 @@ export const listLinksQuerySchema = z.object({
 });
 
 export type ListLinksQuery = z.infer<typeof listLinksQuerySchema>;
+
+export const codeSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid link code')
+  .describe('Short link code');

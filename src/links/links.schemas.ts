@@ -18,3 +18,15 @@ export const createLinkSchema = z.object({
 });
 
 export type CreateLinkInput = z.infer<typeof createLinkSchema>;
+
+export const listLinksQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
+export type ListLinksQuery = z.infer<typeof listLinksQuerySchema>;
+
+export const codeSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid link code')
+  .describe('Short link code');

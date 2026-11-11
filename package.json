@@ -32,6 +32,7 @@
     "@nestjs/swagger": "^12.1.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "ioredis": "^6.0.0",
     "nanoid": "^6.0.2",
     "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",

@@ -23,6 +23,6 @@ describe('Health (e2e)', () => {
     await request(app.getHttpServer())
       .get('/health')
       .expect(200)
-      .expect({ status: 'ok', db: 'up' });
+      .expect({ status: 'ok', db: 'up', redis: 'up' });
   });
 });

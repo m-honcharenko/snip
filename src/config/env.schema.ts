@@ -8,4 +8,6 @@ export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   IP_HASH_SECRET: z.string().min(16),
+  LINK_CACHE_ENABLED: z.enum(['true', 'false']).default('true'),
+  CLICK_TRACKING_ENABLED: z.enum(['true', 'false']).default('true'),
 });

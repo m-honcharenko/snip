@@ -23,9 +23,12 @@ export class ClickQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(ClickQueueService.name);
   readonly queue: Queue<ClickJobData>;
   private readonly ipSecret: string;
+  private readonly trackingEnabled: boolean;
 
   constructor(config: ConfigService) {
     this.ipSecret = config.getOrThrow<string>('IP_HASH_SECRET');
+    this.trackingEnabled =
+      config.get<string>('CLICK_TRACKING_ENABLED') !== 'false';
     this.queue = new Queue<ClickJobData>(CLICKS_QUEUE, {
       connection: {
         ...redisConnectionOptions(config.getOrThrow<string>('REDIS_URL')),
@@ -46,6 +49,7 @@ export class ClickQueueService implements OnModuleDestroy {
 
   // Fire and forget: the redirect never waits for the queue.
   record(click: ClickInput): void {
+    if (!this.trackingEnabled) return;
     const data: ClickJobData = {
       code: click.code,
       clickedAt: new Date().toISOString(),

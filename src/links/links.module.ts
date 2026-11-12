@@ -7,6 +7,7 @@ import { LinkCacheService } from './link-cache.service.js';
 import { LinksController } from './links.controller.js';
 import { LinksService } from './links.service.js';
 import { RedirectController } from './redirect.controller.js';
+import { AnalyticsModule } from '../analytics/analytics.module.js';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RedirectController } from './redirect.controller.js';
         ),
       }),
     }),
+    AnalyticsModule,
   ],
   controllers: [LinksController, RedirectController],
   providers: [LinksService, LinkCacheService],

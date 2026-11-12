@@ -21,8 +21,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
     });
-    this.client.on('error', (error) => {
-      this.logger.warn(`Redis error: ${error.message}`);
+    this.client.on('error', (error: NodeJS.ErrnoException) => {
+      const reason = error.code ?? error.message ?? error.name;
+      this.logger.warn(`Redis error: ${reason}`);
     });
   }
 

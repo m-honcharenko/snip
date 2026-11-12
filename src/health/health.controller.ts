@@ -6,31 +6,43 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { RedisService } from '../redis/redis.service.js';
 
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Service and database health check' })
+  @ApiOperation({ summary: 'Service, database and Redis health check' })
   @ApiOkResponse({
-    description: 'The service and the database are up',
+    description: 'The database is up; status is "degraded" if Redis is down',
     schema: {
       type: 'object',
       properties: {
-        status: { type: 'string', example: 'ok' },
+        status: { type: 'string', enum: ['ok', 'degraded'], example: 'ok' },
         db: { type: 'string', example: 'up' },
+        redis: { type: 'string', enum: ['up', 'down'], example: 'up' },
       },
     },
   })
   @ApiServiceUnavailableResponse({ description: 'The database is unreachable' })
   async check() {
-    try {
-      await this.prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', db: 'up' };
-    } catch {
+    const [db, redis] = await Promise.allSettled([
+      this.prisma.$queryRaw`SELECT 1`,
+      this.redis.ping(),
+    ]);
+    if (db.status === 'rejected') {
       throw new ServiceUnavailableException('Database is unreachable');
     }
+    const redisUp = redis.status === 'fulfilled';
+    return {
+      status: redisUp ? 'ok' : 'degraded',
+      db: 'up',
+      redis: redisUp ? 'up' : 'down',
+    };
   }
 }

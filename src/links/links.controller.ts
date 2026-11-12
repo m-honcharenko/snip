@@ -9,6 +9,7 @@ import {
   Param,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -18,6 +19,7 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiTooManyRequestsResponse,
 } from '@nestjs/swagger';
 import type { Link } from '../generated/prisma/client.js';
 import {
@@ -28,6 +30,7 @@ import {
   codeSchema,
 } from './links.schemas.js';
 import { LinksService } from './links.service.js';
+import { ThrottlerGuard } from '@nestjs/throttler';
 
 const LINK_RESPONSE_SCHEMA = {
   type: 'object',
@@ -54,6 +57,7 @@ export class LinksController {
   constructor(private readonly links: LinksService) {}
 
   @Post()
+  @UseGuards(ThrottlerGuard)
   @ApiOperation({ summary: 'Create a short link' })
   @ApiCreatedResponse({
     description: 'The link was created',
@@ -61,6 +65,9 @@ export class LinksController {
   })
   @ApiBadRequestResponse({
     description: 'Invalid or non-public URL, or expiresAt is in the past',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Rate limit exceeded: 10 links per minute per IP',
   })
   async create(@Body({ schema: createLinkSchema }) input: CreateLinkInput) {
     return toLinkResponse(await this.links.create(input));

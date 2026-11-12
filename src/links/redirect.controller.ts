@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  GoneException,
   HttpStatus,
   NotFoundException,
   Param,
@@ -32,15 +31,11 @@ export class RedirectController {
   @ApiNotFoundResponse({ description: 'No link with this code' })
   @ApiGoneResponse({ description: 'The link has expired' })
   async redirect(@Param('code') code: string) {
-    // A code in the wrong format can't exist: answer 404 without hitting the database
+    // A code in the wrong format can't exist: answer 404 without hitting Redis or the database
     if (!codeSchema.safeParse(code).success) {
       throw new NotFoundException('Link not found');
     }
-    const link = await this.links.findByCode(code);
-    if (!link) throw new NotFoundException('Link not found');
-    if (link.expiresAt && link.expiresAt <= new Date()) {
-      throw new GoneException('Link has expired');
-    }
-    return { url: link.targetUrl, statusCode: HttpStatus.FOUND };
+    const url = await this.links.resolveRedirect(code);
+    return { url, statusCode: HttpStatus.FOUND };
   }
 }

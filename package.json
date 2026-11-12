@@ -8,6 +8,7 @@
   "type": "module",
   "packageManager": "pnpm@12.14.0",
   "scripts": {
+    "bench": "nest build && node --env-file=.env scripts/bench-redirect.mjs",
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -53,6 +54,7 @@
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "@vitest/coverage-v8": "^5.0.5",
+    "autocannon": "^9.0.0",
     "dotenv": "^18.0.8",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.58.0",

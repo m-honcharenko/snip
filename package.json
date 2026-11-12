@@ -25,6 +25,8 @@
     "db:migrate": "prisma migrate dev"
   },
   "dependencies": {
+    "@bull-board/api": "^9.13.0",
+    "@bull-board/express": "^9.13.0",
     "@nest-lab/throttler-storage-redis": "^1.2.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.1",
@@ -34,6 +36,7 @@
     "@nestjs/throttler": "^6.7.1",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "bullmq": "^6.7.4",
     "ioredis": "^6.0.0",
     "nanoid": "^6.0.2",
     "pg": "^8.23.1",

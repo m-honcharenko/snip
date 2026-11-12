@@ -28,9 +28,12 @@ import {
   listLinksQuerySchema,
   type CreateLinkInput,
   codeSchema,
+  type StatsQuery,
+  statsQuerySchema,
 } from './links.schemas.js';
 import { LinksService } from './links.service.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { ClickStatsService } from '../analytics/click-stats.service.js';
 
 const LINK_RESPONSE_SCHEMA = {
   type: 'object',
@@ -54,7 +57,68 @@ function toLinkResponse(link: Link) {
 @ApiTags('links')
 @Controller('links')
 export class LinksController {
-  constructor(private readonly links: LinksService) {}
+  constructor(
+    private readonly links: LinksService,
+    private readonly clickStats: ClickStatsService,
+  ) {}
+
+  @Get(':code/stats')
+  @ApiOperation({ summary: 'Click statistics for a link' })
+  @ApiOkResponse({
+    description: 'Totals, clicks per day and top referrers',
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string', example: 'aB3dE9k' },
+        totalClicks: { type: 'integer', example: 42 },
+        clicksInPeriod: { type: 'integer', example: 17 },
+        period: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', format: 'date' },
+            to: { type: 'string', format: 'date' },
+            days: { type: 'integer', example: 30 },
+          },
+        },
+        clicksByDay: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              date: { type: 'string', format: 'date' },
+              clicks: { type: 'integer' },
+            },
+          },
+        },
+        topReferrers: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              referrer: {
+                type: 'string',
+                nullable: true,
+                example: 'www.google.com',
+              },
+              clicks: { type: 'integer' },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Malformed code or invalid days' })
+  @ApiNotFoundResponse({ description: 'No link with this code' })
+  async stats(
+    @Param('code', { schema: codeSchema }) code: string,
+    @Query({ schema: statsQuerySchema }) query: StatsQuery,
+  ) {
+    const link = await this.links.getByCodeOrThrow(code);
+    return {
+      code: link.code,
+      ...(await this.clickStats.forLink(link.id, query.days)),
+    };
+  }
 
   @Post()
   @UseGuards(ThrottlerGuard)

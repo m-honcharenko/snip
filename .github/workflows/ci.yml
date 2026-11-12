@@ -8,8 +8,33 @@ on:
 jobs:
   check:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     env:
       DATABASE_URL: postgresql://snip:snip@localhost:5432/snip
+      REDIS_URL: redis://localhost:6379
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: snip
+          POSTGRES_PASSWORD: snip
+          POSTGRES_DB: snip
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U snip -d snip"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/setup@c9883cc79df532ad1a7b81bf9ab944ceb090d65c # v2.0.0
@@ -20,3 +45,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm build
+      - run: pnpm test
+      - run: pnpm test:e2e

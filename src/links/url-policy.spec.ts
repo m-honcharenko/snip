@@ -34,6 +34,8 @@ describe('isPublicHttpUrl', () => {
     'http://[fd00::1]',
     'http://[::ffff:127.0.0.1]',
     'http://user:pass@example.com',
+    'not an url',
+    '',
   ])('blocks %s', (url) => {
     expect(isPublicHttpUrl(url)).toBe(false);
   });

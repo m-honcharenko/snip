@@ -30,3 +30,9 @@ export const codeSchema = z
   .string()
   .regex(/^[A-Za-z0-9_-]{1,64}$/, 'Invalid link code')
   .describe('Short link code');
+
+export const statsQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(365).default(30),
+});
+
+export type StatsQuery = z.infer<typeof statsQuerySchema>;

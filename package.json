@@ -25,6 +25,8 @@
     "db:migrate": "prisma migrate dev"
   },
   "dependencies": {
+    "@bull-board/api": "^9.13.0",
+    "@bull-board/express": "^9.13.0",
     "@nest-lab/throttler-storage-redis": "^1.2.0",
     "@nestjs/common": "^12.0.1",
     "@nestjs/config": "^12.0.1",

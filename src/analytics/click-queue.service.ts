@@ -21,7 +21,7 @@ function errorMessage(error: unknown) {
 @Injectable()
 export class ClickQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(ClickQueueService.name);
-  private readonly queue: Queue<ClickJobData>;
+  readonly queue: Queue<ClickJobData>;
   private readonly ipSecret: string;
 
   constructor(config: ConfigService) {

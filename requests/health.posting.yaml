@@ -1,0 +1,4 @@
+name: Health check
+description: Database and Redis status (503 if the database is down, "degraded" if only Redis is down)
+method: GET
+url: ${BASE_URL}/health

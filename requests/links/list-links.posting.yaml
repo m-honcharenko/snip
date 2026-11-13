@@ -1,0 +1,9 @@
+name: List links
+description: Newest first. limit is 1 to 100.
+method: GET
+url: ${BASE_URL}/links
+params:
+- name: page
+  value: '1'
+- name: limit
+  value: '10'

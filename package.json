@@ -23,7 +23,8 @@
     "format": "oxfmt src test",
     "format:check": "oxfmt --check src test",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "db:migrate": "prisma migrate dev",
+    "requests": "posting --collection requests --env requests/local.env"
   },
   "dependencies": {
     "@bull-board/api": "^9.13.0",

@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.github
+.env
+.env.*
+!.env.template
+coverage
+.vitest
+test
+requests
+src/generated
+*.md
+docker-compose.yml

@@ -1,0 +1,7 @@
+name: Link statistics
+description: Total clicks, clicks per day and top referrers. days is 1 to 365.
+method: GET
+url: ${BASE_URL}/links/${last_code}/stats
+params:
+- name: days
+  value: '7'

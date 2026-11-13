@@ -1,0 +1,16 @@
+name: Create link with an expiration date
+description: The date must be in the future, in ISO 8601 format.
+method: POST
+url: ${BASE_URL}/links
+body:
+  content: |-
+    {
+      "url": "https://example.com/limited-offer",
+      "expiresAt": "2030-01-01T00:00:00Z"
+    }
+headers:
+- name: Content-Type
+  value: application/json
+
+scripts:
+  on_response: scripts/save_code.py:on_response

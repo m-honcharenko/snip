@@ -1,0 +1,4 @@
+name: Get link metadata
+description: Expired links are returned too.
+method: GET
+url: ${BASE_URL}/links/${last_code}

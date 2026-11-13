@@ -1,0 +1,15 @@
+name: Create link
+description: Creates a short link. Rate limited to 10 per minute per IP.
+method: POST
+url: ${BASE_URL}/links
+body:
+  content: |-
+    {
+      "url": "https://example.com/some/long/path?utm_source=posting"
+    }
+headers:
+- name: Content-Type
+  value: application/json
+
+scripts:
+  on_response: scripts/save_code.py:on_response

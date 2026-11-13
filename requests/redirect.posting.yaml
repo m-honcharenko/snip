@@ -1,0 +1,4 @@
+name: Follow a short link
+description: Answers 302 with a Location header (404 for an unknown code, 410 if expired).
+method: GET
+url: ${BASE_URL}/${last_code}

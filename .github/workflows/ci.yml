@@ -47,3 +47,28 @@ jobs:
       - run: pnpm build
       - run: pnpm test
       - run: pnpm test:e2e
+
+  docker:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the images and start the stack
+        run: docker compose up -d --build
+      - name: Wait for the app
+        run: curl -fsS --retry 30 --retry-delay 2 --retry-connrefused http://localhost:3000/health
+      - name: Create a link and follow it
+        run: |
+          code=$(curl -fsS -X POST http://localhost:3000/links \
+            -H 'content-type: application/json' \
+            -d '{"url":"https://example.com"}' \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['code'])")
+          status=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:3000/$code")
+          echo "redirect status: $status"
+          test "$status" = "302"
+      - name: Logs
+        if: failure()
+        run: docker compose logs
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

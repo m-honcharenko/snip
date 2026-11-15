@@ -1,0 +1,16 @@
+name: Log in
+description: Saves a new access token (it lives for an hour). Rate limited to 10 per minute per IP.
+method: POST
+url: ${BASE_URL}/auth/login
+body:
+  content: |-
+    {
+      "email": "demo@example.com",
+      "password": "demo-password-123"
+    }
+headers:
+- name: Content-Type
+  value: application/json
+
+scripts:
+  on_response: scripts/save_token.py:on_response

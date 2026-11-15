@@ -61,7 +61,7 @@ async function cleanUp(): Promise<void> {
   const db = new pg.Client({ connectionString: DATABASE_URL });
   try {
     await db.connect();
-    await db.query('TRUNCATE TABLE "ClickEvent", "Link" RESTART IDENTITY CASCADE');
+    await db.query('TRUNCATE TABLE "ClickEvent", "Link", "User" RESTART IDENTITY CASCADE');
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -116,10 +116,29 @@ async function stopServer(child: ChildProcess): Promise<void> {
   });
 }
 
-async function createLink(): Promise<string> {
-  const res = await fetch(`${BASE}/links`, {
+async function register(): Promise<string> {
+  const res = await fetch(`${BASE}/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      email: 'bench@example.com',
+      password: 'bench-password',
+    }),
+  });
+  if (res.status !== 201) {
+    throw new Error(`Could not register: HTTP ${res.status}`);
+  }
+  const body = (await res.json()) as { accessToken: string };
+  return body.accessToken;
+}
+
+async function createLink(token: string): Promise<string> {
+  const res = await fetch(`${BASE}/links`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ url: 'https://example.com/benchmark' }),
   });
   if (res.status !== 201) {
@@ -142,7 +161,8 @@ try {
     const server = startServer(scenario.env);
     try {
       await waitForServer();
-      const code = await createLink();
+      const token = await register();
+      const code = await createLink(token);
       const url = `${BASE}/${code}`;
 
       await run(url, WARMUP);

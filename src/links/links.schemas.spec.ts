@@ -79,14 +79,20 @@ describe('createLinkSchema alias', () => {
     expect(parseAlias(123).success).toBe(false);
   });
 
-  it.each(['api', 'health', 'links', 'admin', 'API', 'Health', 'LiNkS'])(
-    'rejects the reserved alias %s regardless of case',
-    (alias) => {
-      const result = parseAlias(alias);
-      expect(result.success).toBe(false);
-      expect(result.error?.issues[0]?.message).toBe('This alias is reserved');
-    },
-  );
+  it.each([
+    'api',
+    'health',
+    'links',
+    'admin',
+    'auth',
+    'API',
+    'Health',
+    'LiNkS',
+  ])('rejects the reserved alias %s regardless of case', (alias) => {
+    const result = parseAlias(alias);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe('This alias is reserved');
+  });
 
   it('does not reject an alias that only contains a reserved word', () => {
     expect(parseAlias('api-docs').success).toBe(true);

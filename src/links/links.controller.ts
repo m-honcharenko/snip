@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiNoContentResponse,
@@ -21,6 +22,7 @@ import {
   ApiOperation,
   ApiTags,
   ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import type { Link } from '../generated/prisma/client.js';
 import {
@@ -35,6 +37,8 @@ import {
 import { LinksService } from './links.service.js';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ClickStatsService } from '../analytics/click-stats.service.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import { JwtAuthGuard, type AuthUser } from '../auth/jwt-auth.guard.js';
 
 const LINK_RESPONSE_SCHEMA = {
   type: 'object',
@@ -56,6 +60,9 @@ function toLinkResponse(link: Link) {
 }
 
 @ApiTags('links')
+@ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: 'Missing, invalid or expired token' })
+@UseGuards(JwtAuthGuard)
 @Controller('links')
 export class LinksController {
   constructor(
@@ -64,7 +71,7 @@ export class LinksController {
   ) {}
 
   @Get(':code/stats')
-  @ApiOperation({ summary: 'Click statistics for a link' })
+  @ApiOperation({ summary: 'Click statistics for one of your links' })
   @ApiOkResponse({
     description: 'Totals, clicks per day and top referrers',
     schema: {
@@ -109,12 +116,15 @@ export class LinksController {
     },
   })
   @ApiBadRequestResponse({ description: 'Malformed code or invalid days' })
-  @ApiNotFoundResponse({ description: 'No link with this code' })
+  @ApiNotFoundResponse({
+    description: 'No link with this code, or it belongs to another user',
+  })
   async stats(
+    @CurrentUser() user: AuthUser,
     @Param('code', { schema: codeSchema }) code: string,
     @Query({ schema: statsQuerySchema }) query: StatsQuery,
   ) {
-    const link = await this.links.getByCodeOrThrow(code);
+    const link = await this.links.getOwnedByCodeOrThrow(user.id, code);
     return {
       code: link.code,
       ...(await this.clickStats.forLink(link.id, query.days)),
@@ -136,12 +146,15 @@ export class LinksController {
   @ApiTooManyRequestsResponse({
     description: 'Rate limit exceeded: 10 links per minute per IP',
   })
-  async create(@Body({ schema: createLinkSchema }) input: CreateLinkInput) {
-    return toLinkResponse(await this.links.create(input));
+  async create(
+    @CurrentUser() user: AuthUser,
+    @Body({ schema: createLinkSchema }) input: CreateLinkInput,
+  ) {
+    return toLinkResponse(await this.links.create(user.id, input));
   }
 
   @Get()
-  @ApiOperation({ summary: 'List links, newest first' })
+  @ApiOperation({ summary: 'List your links, newest first' })
   @ApiOkResponse({
     description: 'A page of links',
     schema: {
@@ -156,8 +169,11 @@ export class LinksController {
     },
   })
   @ApiBadRequestResponse({ description: 'Invalid page or limit' })
-  async list(@Query({ schema: listLinksQuerySchema }) query: ListLinksQuery) {
-    const { items, total } = await this.links.list(query);
+  async list(
+    @CurrentUser() user: AuthUser,
+    @Query({ schema: listLinksQuerySchema }) query: ListLinksQuery,
+  ) {
+    const { items, total } = await this.links.listOwned(user.id, query);
     return {
       items: items.map(toLinkResponse),
       page: query.page,
@@ -168,25 +184,37 @@ export class LinksController {
   }
 
   @Get(':code')
-  @ApiOperation({ summary: 'Get link metadata' })
+  @ApiOperation({ summary: 'Get metadata of one of your links' })
   @ApiOkResponse({
     description: 'Link metadata (expired links are returned too)',
     schema: LINK_RESPONSE_SCHEMA,
   })
   @ApiBadRequestResponse({ description: 'Malformed link code' })
-  @ApiNotFoundResponse({ description: 'No link with this code' })
-  async get(@Param('code', { schema: codeSchema }) code: string) {
-    return toLinkResponse(await this.links.getByCodeOrThrow(code));
+  @ApiNotFoundResponse({
+    description: 'No link with this code, or it belongs to another user',
+  })
+  async get(
+    @CurrentUser() user: AuthUser,
+    @Param('code', { schema: codeSchema }) code: string,
+  ) {
+    return toLinkResponse(
+      await this.links.getOwnedByCodeOrThrow(user.id, code),
+    );
   }
 
   @Delete(':code')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Delete a link' })
+  @ApiOperation({ summary: 'Delete one of your links' })
   @ApiNoContentResponse({ description: 'The link was deleted' })
   @ApiBadRequestResponse({ description: 'Malformed link code' })
-  @ApiNotFoundResponse({ description: 'No link with this code' })
-  async remove(@Param('code', { schema: codeSchema }) code: string) {
-    const deleted = await this.links.deleteByCode(code);
+  @ApiNotFoundResponse({
+    description: 'No link with this code, or it belongs to another user',
+  })
+  async remove(
+    @CurrentUser() user: AuthUser,
+    @Param('code', { schema: codeSchema }) code: string,
+  ) {
+    const deleted = await this.links.deleteOwnedByCode(user.id, code);
     if (!deleted) throw new NotFoundException('Link not found');
   }
 }

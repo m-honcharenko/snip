@@ -5,7 +5,7 @@ export const MAX_URL_LENGTH = 2048;
 
 // Paths that already belong to the app. Express routing is case-insensitive,
 // so the check lowercases the alias.
-const RESERVED_ALIASES = new Set(['api', 'health', 'links', 'admin']);
+const RESERVED_ALIASES = new Set(['api', 'health', 'links', 'admin', 'auth']);
 
 export const createLinkSchema = z.object({
   url: z

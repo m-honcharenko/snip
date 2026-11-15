@@ -9,6 +9,8 @@ body:
       "alias": "docs"
     }
 headers:
+- name: Authorization
+  value: Bearer ${token}
 - name: Content-Type
   value: application/json
 

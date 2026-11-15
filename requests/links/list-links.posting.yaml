@@ -7,3 +7,6 @@ params:
   value: '1'
 - name: limit
   value: '10'
+headers:
+- name: Authorization
+  value: Bearer ${token}

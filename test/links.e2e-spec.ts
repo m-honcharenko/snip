@@ -1,4 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaService } from '../src/prisma/prisma.service.js';
@@ -18,16 +19,42 @@ afterAll(async () => {
   await app.close();
 });
 
+const EMAIL = 'nick@example.com';
+const PASSWORD = 'correct-password';
+
+let token: string;
+let userId: number;
+
 beforeEach(async () => {
   await resetState(app);
+  token = await register(EMAIL);
+  userId = (await prisma().user.findUniqueOrThrow({ where: { email: EMAIL } }))
+    .id;
 });
 
 const http = () => request(app.getHttpServer());
 const prisma = () => app.get(PrismaService);
 const redis = () => app.get(RedisService).client;
 
+async function register(email: string) {
+  const res = await http()
+    .post('/auth/register')
+    .send({ email, password: PASSWORD })
+    .expect(201);
+  return res.body.accessToken as string;
+}
+
+const bearer = (value: string) => ({ Authorization: `Bearer ${value}` });
+
+// Requests to /links as the user of the current test
+const api = () => ({
+  get: (path: string) => http().get(path).set(bearer(token)),
+  post: (path: string) => http().post(path).set(bearer(token)),
+  delete: (path: string) => http().delete(path).set(bearer(token)),
+});
+
 async function createLink(url = 'https://example.com') {
-  const res = await http().post('/links').send({ url }).expect(201);
+  const res = await api().post('/links').send({ url }).expect(201);
   return res.body as {
     code: string;
     targetUrl: string;
@@ -43,13 +70,14 @@ function createExpiredLink(code = 'expired1') {
       code,
       targetUrl: 'https://example.com',
       expiresAt: new Date(Date.now() - 60_000),
+      userId,
     },
   });
 }
 
 describe('creating links', () => {
   it('returns the new link without internal fields', async () => {
-    const res = await http()
+    const res = await api()
       .post('/links')
       .send({ url: 'https://example.com/page' })
       .expect(201);
@@ -61,11 +89,12 @@ describe('creating links', () => {
     expect(res.body.code).toMatch(/^[0-9A-Za-z]{7}$/);
     expect(Number.isNaN(Date.parse(res.body.createdAt))).toBe(false);
     expect(res.body).not.toHaveProperty('id');
+    expect(res.body).not.toHaveProperty('userId');
   });
 
   it('stores the expiration date', async () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
-    const res = await http()
+    const res = await api()
       .post('/links')
       .send({ url: 'https://example.com', expiresAt })
       .expect(201);
@@ -83,7 +112,7 @@ describe('creating links', () => {
       { url: 'https://example.com', expiresAt: 'tomorrow' },
     ],
   ])('rejects %s with the unified error format', async (_name, body) => {
-    const res = await http().post('/links').send(body).expect(400);
+    const res = await api().post('/links').send(body).expect(400);
 
     expect(res.body).toMatchObject({
       statusCode: 400,
@@ -96,7 +125,7 @@ describe('creating links', () => {
   });
 
   it('rejects an expiration date in the past', async () => {
-    const res = await http()
+    const res = await api()
       .post('/links')
       .send({
         url: 'https://example.com',
@@ -111,7 +140,7 @@ describe('creating links', () => {
   });
 
   it('answers 400 (not 500) for malformed JSON', async () => {
-    const res = await http()
+    const res = await api()
       .post('/links')
       .set('Content-Type', 'application/json')
       .send('{bad json')
@@ -119,6 +148,147 @@ describe('creating links', () => {
 
     expect(res.body.statusCode).toBe(400);
     expect(typeof res.body.message).toBe('string');
+  });
+});
+
+describe('authorization', () => {
+  it.each([
+    ['POST /links', () => http().post('/links'), '/links'],
+    ['GET /links', () => http().get('/links'), '/links'],
+    ['GET /links/:code', () => http().get('/links/abc1234'), '/links/abc1234'],
+    [
+      'GET /links/:code/stats',
+      () => http().get('/links/abc1234/stats'),
+      '/links/abc1234/stats',
+    ],
+    [
+      'DELETE /links/:code',
+      () => http().delete('/links/abc1234'),
+      '/links/abc1234',
+    ],
+  ])('answers 401 for %s without a token', async (_name, send, path) => {
+    const res = await send();
+
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({
+      statusCode: 401,
+      error: 'Unauthorized',
+      message: 'Missing or malformed bearer token',
+      path,
+    });
+  });
+
+  it('rejects a malformed token, an expired one and one signed with another secret', async () => {
+    const expired = await app
+      .get(JwtService, { strict: false })
+      .signAsync({ sub: String(userId) }, { expiresIn: -10 });
+    const forged = await new JwtService({
+      secret: 'another-secret-another-secret-another',
+    }).signAsync({ sub: String(userId) });
+
+    for (const value of ['not-a-jwt', expired, forged]) {
+      const res = await http().get('/links').set(bearer(value)).expect(401);
+      expect(res.body.message).toBe('Invalid or expired token');
+    }
+  });
+
+  it('keeps the redirect public', async () => {
+    const link = await createLink('https://example.com/public');
+
+    await http()
+      .get(`/${link.code}`)
+      .expect(302)
+      .expect('Location', 'https://example.com/public');
+  });
+});
+
+describe('link ownership', () => {
+  let otherToken: string;
+
+  beforeEach(async () => {
+    otherToken = await register('other@example.com');
+  });
+
+  it('shows each user only their own links', async () => {
+    await createLink('https://example.com/mine');
+    await http()
+      .post('/links')
+      .set(bearer(otherToken))
+      .send({ url: 'https://example.com/theirs' })
+      .expect(201);
+
+    const mine = await api().get('/links').expect(200);
+    const theirs = await http()
+      .get('/links')
+      .set(bearer(otherToken))
+      .expect(200);
+
+    expect(mine.body.total).toBe(1);
+    expect(mine.body.items[0].targetUrl).toBe('https://example.com/mine');
+    expect(theirs.body.total).toBe(1);
+    expect(theirs.body.items[0].targetUrl).toBe('https://example.com/theirs');
+  });
+
+  it('answers 404 to another user for metadata, statistics and deletion', async () => {
+    const link = await createLink();
+    const asOther = (method: 'get' | 'delete', path: string) =>
+      http()[method](path).set(bearer(otherToken));
+
+    await asOther('get', `/links/${link.code}`).expect(404);
+    await asOther('get', `/links/${link.code}/stats`).expect(404);
+    await asOther('delete', `/links/${link.code}`).expect(404);
+
+    // Nothing happened to the link
+    await api().get(`/links/${link.code}`).expect(200);
+    await http().get(`/${link.code}`).expect(302);
+  });
+
+  it('does not let another user evict a cache entry', async () => {
+    const link = await createLink();
+    await http().get(`/${link.code}`).expect(302);
+    expect(await redis().exists(`link:${link.code}`)).toBe(1);
+
+    await http()
+      .delete(`/links/${link.code}`)
+      .set(bearer(otherToken))
+      .expect(404);
+
+    expect(await redis().exists(`link:${link.code}`)).toBe(1);
+  });
+
+  it('keeps aliases unique across users', async () => {
+    await api()
+      .post('/links')
+      .send({ url: 'https://example.com', alias: 'docs' })
+      .expect(201);
+
+    await http()
+      .post('/links')
+      .set(bearer(otherToken))
+      .send({ url: 'https://example.com/other', alias: 'docs' })
+      .expect(409);
+  });
+
+  it('keeps links without an owner redirecting but out of every list', async () => {
+    await prisma().link.create({
+      data: { code: 'legacy1', targetUrl: 'https://example.com/legacy' },
+    });
+
+    await http()
+      .get('/legacy1')
+      .expect(302)
+      .expect('Location', 'https://example.com/legacy');
+    await api().get('/links/legacy1').expect(404);
+    await api().delete('/links/legacy1').expect(404);
+    expect((await api().get('/links').expect(200)).body.total).toBe(0);
+  });
+
+  it('removes the links of a deleted user', async () => {
+    const link = await createLink();
+
+    await prisma().user.delete({ where: { id: userId } });
+
+    expect(await prisma().link.count({ where: { code: link.code } })).toBe(0);
   });
 });
 
@@ -151,7 +321,7 @@ describe('redirects', () => {
 
   it('caps the cache TTL at the link expiration', async () => {
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
-    const res = await http()
+    const res = await api()
       .post('/links')
       .send({ url: 'https://example.com', expiresAt })
       .expect(201);
@@ -195,17 +365,17 @@ describe('metadata, list and delete', () => {
     const link = await createLink();
     await createExpiredLink();
 
-    const res = await http().get(`/links/${link.code}`).expect(200);
+    const res = await api().get(`/links/${link.code}`).expect(200);
     expect(res.body).toEqual(link);
 
-    const expired = await http().get('/links/expired1').expect(200);
+    const expired = await api().get('/links/expired1').expect(200);
     expect(expired.body.code).toBe('expired1');
     expect(new Date(expired.body.expiresAt).getTime()).toBeLessThan(Date.now());
   });
 
   it('answers 404 for unknown metadata and 400 for a malformed code', async () => {
-    await http().get('/links/nope123').expect(404);
-    await http().get('/links/bad.code').expect(400);
+    await api().get('/links/nope123').expect(404);
+    await api().get('/links/bad.code').expect(400);
   });
 
   it('lists links newest first with pagination', async () => {
@@ -213,7 +383,7 @@ describe('metadata, list and delete', () => {
       await createLink(`https://example.com/${n}`);
     }
 
-    const first = await http().get('/links?limit=2').expect(200);
+    const first = await api().get('/links?limit=2').expect(200);
     expect(first.body).toMatchObject({
       page: 1,
       limit: 2,
@@ -224,20 +394,20 @@ describe('metadata, list and delete', () => {
       first.body.items.map((item: { targetUrl: string }) => item.targetUrl),
     ).toEqual(['https://example.com/3', 'https://example.com/2']);
 
-    const second = await http().get('/links?limit=2&page=2').expect(200);
+    const second = await api().get('/links?limit=2&page=2').expect(200);
     expect(
       second.body.items.map((item: { targetUrl: string }) => item.targetUrl),
     ).toEqual(['https://example.com/1']);
 
-    const beyond = await http().get('/links?page=99').expect(200);
+    const beyond = await api().get('/links?page=99').expect(200);
     expect(beyond.body.items).toEqual([]);
     expect(beyond.body.total).toBe(3);
   });
 
   it('rejects invalid pagination parameters', async () => {
-    await http().get('/links?page=0').expect(400);
-    await http().get('/links?limit=1000').expect(400);
-    await http().get('/links?limit=abc').expect(400);
+    await api().get('/links?page=0').expect(400);
+    await api().get('/links?limit=1000').expect(400);
+    await api().get('/links?limit=abc').expect(400);
   });
 
   it('deletes a link and drops it from the cache', async () => {
@@ -245,22 +415,22 @@ describe('metadata, list and delete', () => {
     await http().get(`/${link.code}`).expect(302);
     expect(await redis().exists(`link:${link.code}`)).toBe(1);
 
-    await http().delete(`/links/${link.code}`).expect(204);
+    await api().delete(`/links/${link.code}`).expect(204);
 
     expect(await redis().exists(`link:${link.code}`)).toBe(0);
-    await http().get(`/links/${link.code}`).expect(404);
+    await api().get(`/links/${link.code}`).expect(404);
     await http().get(`/${link.code}`).expect(404);
-    await http().delete(`/links/${link.code}`).expect(404);
+    await api().delete(`/links/${link.code}`).expect(404);
   });
 
   it('answers 400 when deleting with a malformed code', async () => {
-    await http().delete('/links/bad.code').expect(400);
+    await api().delete('/links/bad.code').expect(400);
   });
 });
 
 describe('custom aliases', () => {
   const createWithAlias = (alias: string, url = 'https://example.com/a') =>
-    http().post('/links').send({ url, alias });
+    api().post('/links').send({ url, alias });
 
   it('creates a link under the alias and redirects through it', async () => {
     const res = await createWithAlias('docs').expect(201);
@@ -274,12 +444,12 @@ describe('custom aliases', () => {
       .get('/docs')
       .expect(302)
       .expect('Location', 'https://example.com/a');
-    await http().get('/links/docs').expect(200);
+    await api().get('/links/docs').expect(200);
   });
 
   it('stores the expiration date together with the alias', async () => {
     const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
-    const res = await http()
+    const res = await api()
       .post('/links')
       .send({ url: 'https://example.com', alias: 'docs', expiresAt })
       .expect(201);
@@ -348,6 +518,7 @@ describe('custom aliases', () => {
     ['reserved in another case', 'API'],
     ['reserved: health', 'health'],
     ['reserved: links', 'links'],
+    ['reserved: auth', 'auth'],
   ])('rejects an alias that is %s', async (_name, alias) => {
     const res = await createWithAlias(alias).expect(400);
 
@@ -363,7 +534,7 @@ describe('custom aliases', () => {
     await createWithAlias('docs', 'https://example.com/old').expect(201);
     await http().get('/docs').expect(302);
 
-    await http().delete('/links/docs').expect(204);
+    await api().delete('/links/docs').expect(204);
     await http().get('/docs').expect(404);
 
     await createWithAlias('docs', 'https://example.com/new').expect(201);
@@ -389,7 +560,7 @@ describe('click statistics', () => {
         (await prisma().clickEvent.count({ where: { linkId: row.id } })) === 3,
     );
 
-    const res = await http().get(`/links/${link.code}/stats`).expect(200);
+    const res = await api().get(`/links/${link.code}/stats`).expect(200);
 
     expect(res.body).toMatchObject({
       code: link.code,
@@ -411,9 +582,7 @@ describe('click statistics', () => {
   it('honours the days parameter', async () => {
     const link = await createLink();
 
-    const res = await http()
-      .get(`/links/${link.code}/stats?days=7`)
-      .expect(200);
+    const res = await api().get(`/links/${link.code}/stats?days=7`).expect(200);
 
     expect(res.body.clicksByDay).toHaveLength(7);
     expect(res.body.totalClicks).toBe(0);
@@ -432,22 +601,22 @@ describe('click statistics', () => {
   it('rejects unknown links and invalid parameters', async () => {
     const link = await createLink();
 
-    await http().get('/links/nope123/stats').expect(404);
-    await http().get(`/links/${link.code}/stats?days=0`).expect(400);
-    await http().get(`/links/${link.code}/stats?days=400`).expect(400);
+    await api().get('/links/nope123/stats').expect(404);
+    await api().get(`/links/${link.code}/stats?days=0`).expect(400);
+    await api().get(`/links/${link.code}/stats?days=400`).expect(400);
   });
 });
 
 describe('rate limiting', () => {
   it('allows 10 creations per minute and then answers 429', async () => {
     for (let i = 0; i < 10; i++) {
-      await http()
+      await api()
         .post('/links')
         .send({ url: `https://example.com/${i}` })
         .expect(201);
     }
 
-    const limited = await http()
+    const limited = await api()
       .post('/links')
       .send({ url: 'https://example.com/over' })
       .expect(429);
@@ -465,7 +634,7 @@ describe('rate limiting', () => {
     for (let i = 0; i < 15; i++) {
       await http().get(`/${link.code}`).expect(302);
     }
-    await http().get('/links').expect(200);
+    await api().get('/links').expect(200);
     await http().get('/health').expect(200);
   });
 });

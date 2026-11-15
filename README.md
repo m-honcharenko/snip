@@ -1,4 +1,4 @@
-# Snip
+# Snip: URL shortener with click analytics
 
 <p>
   <a href="https://github.com/m-honcharenko/snip/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/m-honcharenko/snip/ci.yml?branch=main&style=for-the-badge&label=CI&labelColor=1B73D8&color=1559A8&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDEuNzVDMCAuNzg0Ljc4NCAwIDEuNzUgMGgzLjVDNi4yMTYgMCA3IC43ODQgNyAxLjc1djMuNUExLjc1IDEuNzUgMCAwIDEgNS4yNSA3SDR2NGExIDEgMCAwIDAgMSAxaDR2LTEuMjVDOSA5Ljc4NCA5Ljc4NCA5IDEwLjc1IDloMy41Yy45NjYgMCAxLjc1Ljc4NCAxLjc1IDEuNzV2My41QTEuNzUgMS43NSAwIDAgMSAxNC4yNSAxNmgtMy41QTEuNzUgMS43NSAwIDAgMSA5IDE0LjI1di0uNzVINUEyLjUgMi41IDAgMCAxIDIuNSAxMVY3aC0uNzVBMS43NSAxLjc1IDAgMCAxIDAgNS4yNVptMS43NS0uMjVhLjI1LjI1IDAgMCAwLS4yNS4yNXYzLjVjMCAuMTM4LjExMi4yNS4yNS4yNWgzLjVhLjI1LjI1IDAgMCAwIC4yNS0uMjV2LTMuNWEuMjUuMjUgMCAwIDAtLjI1LS4yNVptOSA5YS4yNS4yNSAwIDAgMC0uMjUuMjV2My41YzAgLjEzOC4xMTIuMjUuMjUuMjVoMy41YS4yNS4yNSAwIDAgMCAuMjUtLjI1di0zLjVhLjI1LjI1IDAgMCAwLS4yNS0uMjVaIi8%2BPC9zdmc%2B"></a>
@@ -11,14 +11,15 @@ A URL shortener with click analytics, built with NestJS and TypeScript. The focu
 
 ## Features
 
+- Accounts with JWT authentication: every link belongs to the user who created it, and only the owner can list, inspect or delete it.
 - Create short links (optional custom alias and expiration date), list them with pagination, read metadata, delete.
 - `302` redirects served from a Redis cache, with a database fallback.
 - Click analytics recorded asynchronously: totals, clicks per day and top referrers per link.
 - Strict input validation (zod) and one consistent JSON error format.
-- Rate limiting on link creation (Redis-backed).
+- Rate limiting on link creation, registration and login (Redis-backed).
 - OpenAPI documentation (Swagger UI) generated from the code.
 - Multi-stage Docker image and a one-command Docker Compose setup.
-- 100 unit tests and 43 end-to-end tests; CI runs both and smoke-tests the Docker stack.
+- 143 unit tests and 70 end-to-end tests; CI runs both and smoke-tests the Docker stack.
 
 ## Quick start
 
@@ -28,47 +29,63 @@ cd snip
 docker compose up --build
 ```
 
-This starts PostgreSQL, Redis, applies the migrations and runs the app on <http://localhost:3000>. No `.env` file is needed: every variable has a default (the IP-hash secret default is a demo value, set your own `IP_HASH_SECRET` in `.env` for anything beyond a local run).
+This starts PostgreSQL, Redis, applies the migrations and runs the app on <http://localhost:3000>. No `.env` file is needed: every variable has a default (the IP-hash and JWT secret defaults are demo values, set your own `IP_HASH_SECRET` and `JWT_SECRET` in `.env` for anything beyond a local run).
 
 - Swagger UI: <http://localhost:3000/api>
 - Health check: <http://localhost:3000/health>
 - Bull Board (read-only dashboard of the click queue): <http://localhost:3000/admin/queues>. It is available only outside production, for example with `pnpm start:dev`. The Docker image runs with `NODE_ENV=production`, where the dashboard is disabled.
 
 ```bash
+# create an account: the response holds an access token
+curl -s -X POST localhost:3000/auth/register \
+  -H 'content-type: application/json' \
+  -d '{"email":"me@example.com","password":"a-long-password"}'
+# {"accessToken":"eyJhbGciOi..."}
+
+export TOKEN=eyJhbGciOi...   # paste your token here
+
 # create a link
 curl -s -X POST localhost:3000/links \
+  -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.com/some/long/path"}'
 # {"code":"aB3dE9k","targetUrl":"https://example.com/some/long/path","expiresAt":null,"createdAt":"..."}
 
-# follow it
+# follow it (the redirect is public, no token needed)
 curl -i localhost:3000/aB3dE9k
 # HTTP/1.1 302 Found
 # Location: https://example.com/some/long/path
 
 # or choose the short code yourself (3 to 32 letters, digits, "-" and "_")
 curl -s -X POST localhost:3000/links \
+  -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' \
   -d '{"url":"https://example.com/docs","alias":"docs"}'
 # {"code":"docs",...}; the same alias again answers 409
 
-# statistics (last 30 days by default)
-curl -s localhost:3000/links/aB3dE9k/stats
+# statistics of your link (last 30 days by default)
+curl -s localhost:3000/links/aB3dE9k/stats -H "authorization: Bearer $TOKEN"
 ```
+
+In Swagger UI (<http://localhost:3000/api>) call `POST /auth/register`, press **Authorize** and paste the token.
 
 If ports `3000`, `5432` or `6379` are taken, set `APP_PORT`, `POSTGRES_PORT` or `REDIS_PORT` in `.env`.
 
 ## API
 
-| Method and path          | Description                                                                                              |
-| ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `POST /links`            | Create a link (`url`, optional `alias`, `expiresAt`). `409` if the alias is taken. 10 per minute per IP. |
-| `GET /:code`             | `302` redirect. `404` for an unknown code, `410` for an expired link.                                    |
-| `GET /links`             | List links, newest first. `page` (default 1) and `limit` (1 to 100, default 20).                         |
-| `GET /links/:code`       | Link metadata (expired links are returned too).                                                          |
-| `GET /links/:code/stats` | Total clicks, clicks per day and top referrers. `days` (1 to 365, default 30).                           |
-| `DELETE /links/:code`    | Delete a link (`204`) and drop it from the cache.                                                        |
-| `GET /health`            | `200` if the database is up; `status` is `degraded` when Redis is down, `503` when the database is down. |
+| Method and path          | Description                                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `POST /auth/register`    | Create an account (`email`, `password` of 8 to 128 characters) and get an access token. `409` if the email is registered. |
+| `POST /auth/login`       | Log in and get an access token. `401` for a wrong email or password.                                                      |
+| `POST /links`            | Create a link (`url`, optional `alias` and `expiresAt`). `409` if the alias is taken. Rate limit: 10 per minute per IP.   |
+| `GET /:code`             | `302` redirect, public. `404` for an unknown code, `410` for an expired link.                                             |
+| `GET /links`             | List your links, newest first. `page` (default 1) and `limit` (1 to 100, default 20).                                     |
+| `GET /links/:code`       | Metadata of your link (expired links are returned too).                                                                   |
+| `GET /links/:code/stats` | Total clicks, clicks per day and top referrers. `days` (1 to 365, default 30).                                            |
+| `DELETE /links/:code`    | Delete your link (`204`) and drop it from the cache.                                                                      |
+| `GET /health`            | `200` if the database is up; `status` is `degraded` when Redis is down, `503` when the database is down.                  |
+
+Every `/links` route except the public redirect needs an `Authorization: Bearer <token>` header and answers `401` without a valid token. Another user's link looks like a missing one: `404`, never `403`.
 
 All errors share one shape:
 
@@ -84,9 +101,9 @@ All errors share one shape:
 
 `details` is present only for validation errors. Unexpected errors return a generic `500` message; the details stay in the server log.
 
-A [Posting](https://posting.sh) request collection lives in [`requests/`](requests). Install Posting (`uv tool install posting`) and run `pnpm requests`. Run "Create link" first: a post-response script stores the new code, and the other requests use it as `${last_code}`. "Create link with alias" stores `${last_alias}` the same way, which "Delete link by alias" uses.
+A [Posting](https://posting.sh) request collection lives in [`requests/`](requests). Install Posting (`uv tool install posting`) and run `pnpm requests`. Run "Register" (or "Log in" if the account exists) first: a post-response script stores the access token, and every request in `links/` sends it as `${token}`. Then run "Create link": another script stores the new code, and the other requests use it as `${last_code}`. "Create link with alias" stores `${last_alias}` the same way, which "Delete link by alias" uses. Until you log in, Posting refuses to send the `links/` requests ("Variable not defined: 'token'"). The token lives for an hour by default: log in again when it expires.
 
-> **Posting version.** The collection and its Python scripts (`requests/scripts/save_code.py`, `save_alias.py`) target Posting 2.x, the Python/Textual version. The latest release is 2.11.2, and the script is compatible up to that version. Posting 3 is a beta rewrite in Go. It opens the same collections, but [it does not run Python scripts](https://posting.sh/guide/migrating/) (they stay in the request files untouched), so the `last_code` and `last_alias` auto-save does not work there. In Posting 3 copy the code from the "Create link" response by hand, or replace the script with a response capture or a session value. Both versions install a `posting` command, so if you have both, check which one is first in your `PATH`.
+> **Posting version.** The collection and its Python scripts (`requests/scripts/save_token.py`, `save_code.py`, `save_alias.py`) target Posting 2.x, the Python/Textual version. The latest release is 2.11.2, and the script is compatible up to that version. Posting 3 is a beta rewrite in Go. It opens the same collections, but [it does not run Python scripts](https://posting.sh/guide/migrating/) (they stay in the request files untouched), so the `token`, `last_code` and `last_alias` auto-save does not work there. In Posting 3 copy the token and the code from the responses by hand, or replace the script with a response capture or a session value. Both versions install a `posting` command, so if you have both, check which one is first in your `PATH`.
 
 ## Architecture
 
@@ -94,7 +111,7 @@ A [Posting](https://posting.sh) request collection lives in [`requests/`](reques
 flowchart LR
   Client([Client]) -->|HTTP| API
   subgraph App["NestJS application"]
-    API["Controllers<br/>links, redirect, health"]
+    API["Controllers<br/>auth, links, redirect, health"]
     Svc[LinksService]
     Cache[LinkCacheService]
     Queue[ClickQueueService]
@@ -140,7 +157,11 @@ sequenceDiagram
 
 **Redirect cache: cache-aside in Redis.** Key `link:<code>`, TTL is the smaller of one hour and the time left until `expiresAt`, so an expired link leaves the cache exactly when it expires. Unknown codes and expired links are not cached. Deleting a link removes its key. Every Redis call is wrapped: if Redis fails, the error is logged and the request falls through to the database, so a cache outage costs speed, not availability.
 
-**Custom aliases are the short code itself.** An optional `alias` (3 to 32 characters: letters, digits, `-` and `_`) is stored in the same unique `Link.code` column, so redirects, caching, statistics and deletion work the same for an alias and a generated code, with no migration. Availability is checked before the insert for a clean `409`, and the unique index stays the source of truth when two requests race for one alias. Paths the app already uses (`api`, `health`, `links`, `admin`) are reserved, case-insensitively, because Express routing ignores case. An alias can't be changed: delete the link and create it again, which frees the alias.
+**Custom aliases are the short code itself.** An optional `alias` (3 to 32 characters: letters, digits, `-` and `_`) is stored in the same unique `Link.code` column, so redirects, caching, statistics and deletion work the same for an alias and a generated code, with no migration. Availability is checked before the insert for a clean `409`, and the unique index stays the source of truth when two requests race for one alias. Paths the app already uses (`api`, `health`, `links`, `admin`, `auth`) are reserved, case-insensitively, because Express routing ignores case. An alias can't be changed: delete the link and create it again, which frees the alias.
+
+**Authentication: a stateless access token, no sessions.** `POST /auth/register` and `POST /auth/login` return a signed JWT (HS256, one hour by default, `JWT_EXPIRES_IN`) with the user id in `sub`. A guard verifies the signature and expiry on every `/links` request, so there is no session store to keep in sync. The price is that a token can't be revoked before it expires and there are no refresh tokens: a short lifetime limits the damage, and refresh tokens with revocation are the next step. Passwords are hashed with scrypt from `node:crypto` (memory-hard, no native dependency); the cost parameters are stored inside each hash, so they can be raised later. Login takes the same time for an unknown email and a wrong password, answers both with one message, and is rate limited like link creation. The email is lower-cased and trimmed, so one address can't register twice.
+
+**Ownership: another user's link is a `404`.** Every query for metadata, statistics, listing and deletion filters by the owner in the same statement (`WHERE code AND userId`), so there is no window between a check and an action. A foreign code answers exactly like an unknown one, which does not reveal that the code exists. A failed delete does not touch the cache, so a stranger can't evict someone else's entry. Aliases stay unique across all users, because they share one namespace with generated codes. Links created before accounts existed have no owner: they keep redirecting but can't be listed or deleted through the API.
 
 **`302`, not `301`.** Browsers cache a `301` permanently, which would hide repeat clicks from the analytics and make it impossible to disable or expire a link.
 
@@ -152,9 +173,9 @@ sequenceDiagram
 
 **URL policy.** Only `http` and `https`, at most 2048 characters, no credentials in the URL, no `localhost` or `*.localhost`/`*.local`/`*.internal` names, no single-label hosts, and no private, loopback, link-local, CGNAT, multicast or reserved IP addresses (IPv4 and IPv6, including IPv4-mapped). The service never fetches a stored URL, it only redirects the visitor's browser, so the goal is to stop links that send people to internal addresses. DNS is not resolved: a public domain that points to a private address is accepted. If link previews or any server-side fetching are added, an SSRF defence that checks the resolved IP at connection time becomes necessary.
 
-**Rate limiting is fail-open too.** `POST /links` allows 10 requests per minute per IP, counted in Redis. If Redis is unavailable the limiter lets the request through and logs a warning instead of turning link creation into a `500`.
+**Rate limiting is fail-open too.** `POST /links`, `POST /auth/register` and `POST /auth/login` each allow 10 requests per minute per IP, counted in Redis. If Redis is unavailable the limiter lets the request through and logs a warning instead of turning link creation into a `500`.
 
-**Validation with zod and a single error filter.** Request bodies, query strings and the `:code` path parameter are validated by schemas; a global exception filter turns every error (validation, `404`, `410`, `429`, malformed JSON, unexpected) into the same JSON shape. A malformed code on the public redirect answers `404` without touching Redis or the database.
+**Validation with zod and a single error filter.** Request bodies, query strings and the `:code` path parameter are validated by schemas; a global exception filter turns every error (validation, `401`, `404`, `409`, `410`, `429`, malformed JSON, unexpected) into the same JSON shape. A malformed code on the public redirect answers `404` without touching Redis or the database.
 
 **Offset pagination.** `page` and `limit` with a total count: simple and enough here. It gets slow on very large tables and pages can shift while rows are added; a cursor on `(createdAt, id)` would be the next step.
 
@@ -174,7 +195,8 @@ sequenceDiagram
 
 ## Known limitations
 
-- There is no authentication: anyone who knows a code can delete the link. Ownership (JWT) is the natural next feature.
+- Access tokens can't be revoked before they expire, and there are no refresh tokens, logout, password reset or email verification.
+- Links created before accounts existed have no owner and can't be managed through the API.
 - Click events are dropped if Redis is down when the redirect happens; jobs that fail 5 times stay in the BullMQ failed set for 7 days.
 - A cached link can be served for up to an hour after deletion in one rare race (a redirect reads the row just before the delete and writes the cache just after the invalidation).
 - The URL policy does not resolve DNS (see above).
@@ -186,7 +208,7 @@ sequenceDiagram
 Requirements: Node.js 26, pnpm 12, Docker.
 
 ```bash
-cp .env.template .env            # then set IP_HASH_SECRET
+cp .env.template .env            # then set IP_HASH_SECRET and JWT_SECRET
 docker compose up -d db redis    # only the infrastructure
 pnpm install
 pnpm prisma generate
@@ -213,6 +235,8 @@ The e2e setup creates the `snip_test` database, applies the migrations, and refu
 | `DATABASE_URL`           | none          | PostgreSQL connection string                           |
 | `REDIS_URL`              | none          | Redis connection string                                |
 | `IP_HASH_SECRET`         | none          | Secret for hashing client IPs (16+ characters)         |
+| `JWT_SECRET`             | none          | Secret for signing access tokens (32+ characters)      |
+| `JWT_EXPIRES_IN`         | `1h`          | Access token lifetime, for example `15m`, `1h` or `7d` |
 | `PORT`                   | `3000`        | HTTP port                                              |
 | `NODE_ENV`               | `development` | `production` disables Bull Board                       |
 | `LINK_CACHE_ENABLED`     | `true`        | Set to `false` to skip the redirect cache (benchmarks) |
@@ -223,6 +247,7 @@ The e2e setup creates the `snip_test` database, applies the migrations, and refu
 ```text
 src/
   analytics/   click queue, BullMQ worker, statistics
+  auth/        registration, login, password hashing, JWT guard
   common/      global exception filter
   config/      environment schema (zod)
   health/      health check
@@ -237,4 +262,4 @@ requests/      Posting request collection
 
 ## Tech stack
 
-Node.js 26, NestJS 12 (ESM), TypeScript 6, PostgreSQL 16 with Prisma 7, Redis 7 with ioredis, BullMQ 6, zod 4, `@nestjs/throttler`, `@nestjs/swagger`, Vitest 5 and Supertest, oxlint and oxfmt, pnpm 12, Docker and GitHub Actions.
+Node.js 26, NestJS 12 (ESM), TypeScript 6, PostgreSQL 16 with Prisma 7, Redis 7 with ioredis, BullMQ 6, zod 4, `@nestjs/jwt`, `@nestjs/throttler`, `@nestjs/swagger`, Vitest 5 and Supertest, oxlint and oxfmt, pnpm 12, Docker and GitHub Actions.

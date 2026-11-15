@@ -258,6 +258,122 @@ describe('metadata, list and delete', () => {
   });
 });
 
+describe('custom aliases', () => {
+  const createWithAlias = (alias: string, url = 'https://example.com/a') =>
+    http().post('/links').send({ url, alias });
+
+  it('creates a link under the alias and redirects through it', async () => {
+    const res = await createWithAlias('docs').expect(201);
+
+    expect(res.body).toMatchObject({
+      code: 'docs',
+      targetUrl: 'https://example.com/a',
+      expiresAt: null,
+    });
+    await http()
+      .get('/docs')
+      .expect(302)
+      .expect('Location', 'https://example.com/a');
+    await http().get('/links/docs').expect(200);
+  });
+
+  it('stores the expiration date together with the alias', async () => {
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    const res = await http()
+      .post('/links')
+      .send({ url: 'https://example.com', alias: 'docs', expiresAt })
+      .expect(201);
+
+    expect(res.body).toMatchObject({ code: 'docs', expiresAt });
+  });
+
+  it('answers 409 for a taken alias and keeps the first link', async () => {
+    await createWithAlias('docs', 'https://example.com/first').expect(201);
+
+    const res = await createWithAlias(
+      'docs',
+      'https://example.com/second',
+    ).expect(409);
+
+    expect(res.body).toMatchObject({
+      statusCode: 409,
+      error: 'Conflict',
+      message: 'Alias is already taken',
+      path: '/links',
+    });
+    await http()
+      .get('/docs')
+      .expect(302)
+      .expect('Location', 'https://example.com/first');
+  });
+
+  it('answers 409 when the alias is a generated code of an existing link', async () => {
+    const link = await createLink();
+
+    await createWithAlias(link.code).expect(409);
+  });
+
+  it('lets exactly one of two simultaneous requests take the alias', async () => {
+    const results = await Promise.all([
+      createWithAlias('race', 'https://example.com/one'),
+      createWithAlias('race', 'https://example.com/two'),
+    ]);
+
+    expect(results.map((res) => res.status).sort((a, b) => a - b)).toEqual([
+      201, 409,
+    ]);
+    expect(await prisma().link.count({ where: { code: 'race' } })).toBe(1);
+  });
+
+  it('treats aliases that differ only in case as different links', async () => {
+    await createWithAlias('Docs', 'https://example.com/upper').expect(201);
+    await createWithAlias('docs', 'https://example.com/lower').expect(201);
+
+    await http()
+      .get('/Docs')
+      .expect(302)
+      .expect('Location', 'https://example.com/upper');
+    await http()
+      .get('/docs')
+      .expect(302)
+      .expect('Location', 'https://example.com/lower');
+  });
+
+  it.each([
+    ['too short', 'ab'],
+    ['too long', 'a'.repeat(33)],
+    ['containing a dot', 'my.docs'],
+    ['containing a space', 'my docs'],
+    ['reserved', 'admin'],
+    ['reserved in another case', 'API'],
+    ['reserved: health', 'health'],
+    ['reserved: links', 'links'],
+  ])('rejects an alias that is %s', async (_name, alias) => {
+    const res = await createWithAlias(alias).expect(400);
+
+    expect(res.body).toMatchObject({
+      statusCode: 400,
+      message: 'Validation failed',
+      path: '/links',
+    });
+    expect(await prisma().link.count()).toBe(0);
+  });
+
+  it('frees the alias when the link is deleted', async () => {
+    await createWithAlias('docs', 'https://example.com/old').expect(201);
+    await http().get('/docs').expect(302);
+
+    await http().delete('/links/docs').expect(204);
+    await http().get('/docs').expect(404);
+
+    await createWithAlias('docs', 'https://example.com/new').expect(201);
+    await http()
+      .get('/docs')
+      .expect(302)
+      .expect('Location', 'https://example.com/new');
+  });
+});
+
 describe('click statistics', () => {
   it('counts the clicks written by the worker', async () => {
     const link = await createLink();

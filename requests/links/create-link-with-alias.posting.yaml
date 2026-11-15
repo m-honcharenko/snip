@@ -1,0 +1,16 @@
+name: Create link with alias
+description: Custom short code, 3 to 32 characters (letters, digits, "-" and "_"). Returns 409 if the alias is taken.
+method: POST
+url: ${BASE_URL}/links
+body:
+  content: |-
+    {
+      "url": "https://example.com/some/long/path",
+      "alias": "docs"
+    }
+headers:
+- name: Content-Type
+  value: application/json
+
+scripts:
+  on_response: scripts/save_alias.py:on_response

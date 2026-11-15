@@ -5,7 +5,7 @@ url: ${BASE_URL}/links
 body:
   content: |-
     {
-      "url": "https://example.com/some/long/path?utm_source=posting"
+      "url": "https://example.com/some/long/path"
     }
 headers:
 - name: Content-Type

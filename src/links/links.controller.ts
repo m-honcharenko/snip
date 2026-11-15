@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiConflictResponse,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -128,8 +129,10 @@ export class LinksController {
     schema: LINK_RESPONSE_SCHEMA,
   })
   @ApiBadRequestResponse({
-    description: 'Invalid or non-public URL, or expiresAt is in the past',
+    description:
+      'Invalid or non-public URL, invalid or reserved alias, or expiresAt is in the past',
   })
+  @ApiConflictResponse({ description: 'The alias is already taken' })
   @ApiTooManyRequestsResponse({
     description: 'Rate limit exceeded: 10 links per minute per IP',
   })

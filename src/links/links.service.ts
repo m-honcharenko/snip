@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   GoneException,
   Injectable,
   InternalServerErrorException,
@@ -36,6 +37,26 @@ export class LinksService {
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
     if (expiresAt && expiresAt <= new Date()) {
       throw new BadRequestException('expiresAt must be in the future');
+    }
+
+    // A custom alias is taken or it is not: no retries. The lookup gives the
+    // common case a clean 409 without a failed insert. It is not enough on its
+    // own (two requests can pass it at the same time), so the unique index
+    // stays the source of truth and its violation is mapped to the same 409.
+    if (input.alias) {
+      if (await this.findByCode(input.alias)) {
+        throw new ConflictException('Alias is already taken');
+      }
+      try {
+        return await this.prisma.link.create({
+          data: { code: input.alias, targetUrl: input.url, expiresAt },
+        });
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictException('Alias is already taken');
+        }
+        throw error;
+      }
     }
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {

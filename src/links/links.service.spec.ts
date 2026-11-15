@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   GoneException,
   InternalServerErrorException,
   NotFoundException,
@@ -155,6 +156,91 @@ describe('LinksService.create', () => {
       service.create({ url: 'https://example.com' }),
     ).rejects.toBeNull();
     expect(prisma.link.create).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('LinksService.create with an alias', () => {
+  it('stores the link under the alias without generating a code', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockResolvedValue(makeLink({ code: 'docs' }));
+
+    const link = await service.create({
+      url: 'https://example.com',
+      alias: 'docs',
+    });
+
+    expect(link.code).toBe('docs');
+    expect(generateCode).not.toHaveBeenCalled();
+    expect(prisma.link.findUnique).toHaveBeenCalledWith({
+      where: { code: 'docs' },
+    });
+    expect(prisma.link.create).toHaveBeenCalledWith({
+      data: {
+        code: 'docs',
+        targetUrl: 'https://example.com',
+        expiresAt: null,
+      },
+    });
+  });
+
+  it('answers 409 for a taken alias without inserting', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(makeLink({ code: 'docs' }));
+
+    await expect(
+      service.create({ url: 'https://example.com', alias: 'docs' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.link.create).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 when another request takes the alias first', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockRejectedValue(uniqueViolation());
+
+    await expect(
+      service.create({ url: 'https://example.com', alias: 'docs' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.link.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fall back to a generated code', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockRejectedValue(uniqueViolation());
+
+    await expect(
+      service.create({ url: 'https://example.com', alias: 'docs' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(generateCode).not.toHaveBeenCalled();
+  });
+
+  it('passes other database errors through', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockRejectedValue(new Error('connection lost'));
+
+    await expect(
+      service.create({ url: 'https://example.com', alias: 'docs' }),
+    ).rejects.toThrow('connection lost');
+  });
+
+  it('stores the expiry together with the alias', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockResolvedValue(makeLink({ code: 'docs' }));
+    const expiresAt = new Date(Date.now() + HOUR_MS);
+
+    await service.create({
+      url: 'https://example.com',
+      alias: 'docs',
+      expiresAt: expiresAt.toISOString(),
+    });
+
+    expect(prisma.link.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ code: 'docs', expiresAt }),
+    });
   });
 });
 

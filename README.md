@@ -11,14 +11,14 @@ A URL shortener with click analytics, built with NestJS and TypeScript. The focu
 
 ## Features
 
-- Create short links (optional expiration date), list them with pagination, read metadata, delete.
+- Create short links (optional custom alias and expiration date), list them with pagination, read metadata, delete.
 - `302` redirects served from a Redis cache, with a database fallback.
 - Click analytics recorded asynchronously: totals, clicks per day and top referrers per link.
 - Strict input validation (zod) and one consistent JSON error format.
 - Rate limiting on link creation (Redis-backed).
 - OpenAPI documentation (Swagger UI) generated from the code.
 - Multi-stage Docker image and a one-command Docker Compose setup.
-- 72 unit tests and 28 end-to-end tests; CI runs both and smoke-tests the Docker stack.
+- 100 unit tests and 43 end-to-end tests; CI runs both and smoke-tests the Docker stack.
 
 ## Quick start
 
@@ -46,6 +46,12 @@ curl -i localhost:3000/aB3dE9k
 # HTTP/1.1 302 Found
 # Location: https://example.com/some/long/path
 
+# or choose the short code yourself (3 to 32 letters, digits, "-" and "_")
+curl -s -X POST localhost:3000/links \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com/docs","alias":"docs"}'
+# {"code":"docs",...}; the same alias again answers 409
+
 # statistics (last 30 days by default)
 curl -s localhost:3000/links/aB3dE9k/stats
 ```
@@ -56,7 +62,7 @@ If ports `3000`, `5432` or `6379` are taken, set `APP_PORT`, `POSTGRES_PORT` or 
 
 | Method and path          | Description                                                                                              |
 | ------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `POST /links`            | Create a link (`url`, optional `expiresAt`). Rate limited: 10 per minute per IP.                         |
+| `POST /links`            | Create a link (`url`, optional `alias`, `expiresAt`). `409` if the alias is taken. 10 per minute per IP. |
 | `GET /:code`             | `302` redirect. `404` for an unknown code, `410` for an expired link.                                    |
 | `GET /links`             | List links, newest first. `page` (default 1) and `limit` (1 to 100, default 20).                         |
 | `GET /links/:code`       | Link metadata (expired links are returned too).                                                          |
@@ -78,9 +84,9 @@ All errors share one shape:
 
 `details` is present only for validation errors. Unexpected errors return a generic `500` message; the details stay in the server log.
 
-A [Posting](https://posting.sh) request collection lives in [`requests/`](requests). Install Posting (`uv tool install posting`) and run `pnpm requests`. Run "Create link" first: a post-response script stores the new code, and the other requests use it.
+A [Posting](https://posting.sh) request collection lives in [`requests/`](requests). Install Posting (`uv tool install posting`) and run `pnpm requests`. Run "Create link" first: a post-response script stores the new code, and the other requests use it as `${last_code}`. "Create link with alias" stores `${last_alias}` the same way, which "Delete link by alias" uses.
 
-> **Posting version.** The collection and its Python script (`requests/scripts/save_code.py`) target Posting 2.x, the Python/Textual version. The latest release is 2.11.2, and the script is compatible up to that version. Posting 3 is a beta rewrite in Go. It opens the same collections, but [it does not run Python scripts](https://posting.sh/guide/migrating/) (they stay in the request files untouched), so the `last_code` auto-save does not work there. In Posting 3 copy the code from the "Create link" response by hand, or replace the script with a response capture or a session value. Both versions install a `posting` command, so if you have both, check which one is first in your `PATH`.
+> **Posting version.** The collection and its Python scripts (`requests/scripts/save_code.py`, `save_alias.py`) target Posting 2.x, the Python/Textual version. The latest release is 2.11.2, and the script is compatible up to that version. Posting 3 is a beta rewrite in Go. It opens the same collections, but [it does not run Python scripts](https://posting.sh/guide/migrating/) (they stay in the request files untouched), so the `last_code` and `last_alias` auto-save does not work there. In Posting 3 copy the code from the "Create link" response by hand, or replace the script with a response capture or a session value. Both versions install a `posting` command, so if you have both, check which one is first in your `PATH`.
 
 ## Architecture
 
@@ -133,6 +139,8 @@ sequenceDiagram
 **Short codes: random nanoid, not base62 of the row ID.** A code is 7 characters from a 62-character alphabet (about 3.5 trillion combinations). Random codes can't be enumerated by incrementing a number and can be generated before the `INSERT`. A collision is possible but rare; the unique index on `Link.code` catches it and the service retries with a new code (up to 5 times). The alphabet is covered by a test that checks every generated code passes the route's code validation.
 
 **Redirect cache: cache-aside in Redis.** Key `link:<code>`, TTL is the smaller of one hour and the time left until `expiresAt`, so an expired link leaves the cache exactly when it expires. Unknown codes and expired links are not cached. Deleting a link removes its key. Every Redis call is wrapped: if Redis fails, the error is logged and the request falls through to the database, so a cache outage costs speed, not availability.
+
+**Custom aliases are the short code itself.** An optional `alias` (3 to 32 characters: letters, digits, `-` and `_`) is stored in the same unique `Link.code` column, so redirects, caching, statistics and deletion work the same for an alias and a generated code, with no migration. Availability is checked before the insert for a clean `409`, and the unique index stays the source of truth when two requests race for one alias. Paths the app already uses (`api`, `health`, `links`, `admin`) are reserved, case-insensitively, because Express routing ignores case. An alias can't be changed: delete the link and create it again, which frees the alias.
 
 **`302`, not `301`.** Browsers cache a `301` permanently, which would hide repeat clicks from the analytics and make it impossible to disable or expire a link.
 

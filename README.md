@@ -1,26 +1,10 @@
 # Snip
 
 <p>
-  <a href="https://github.com/m-honcharenko/snip/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/m-honcharenko/snip/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI"></a>
-  <a href="https://github.com/m-honcharenko/snip/commits/main"><img alt="Last commit" src="https://img.shields.io/github/last-commit/m-honcharenko/snip?style=flat-square&logo=git&logoColor=white"></a>
-  <img alt="Docker image size" src="https://img.shields.io/badge/docker%20image-~600%20MB-2496ED?style=flat-square&logo=docker&logoColor=white">
-  <img alt="Benchmark" src="https://img.shields.io/badge/redirect-~50k%20req%2Fs-success?style=flat-square&logo=speedtest&logoColor=white">
-</p>
-
-<p>
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-26-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white">
-  <img alt="NestJS" src="https://img.shields.io/badge/NestJS-12-E0234E?style=flat-square&logo=nestjs&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-6-3178C6?style=flat-square&logo=typescript&logoColor=white">
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white">
-  <img alt="Prisma" src="https://img.shields.io/badge/Prisma-7-2D3748?style=flat-square&logo=prisma&logoColor=white">
-  <img alt="Redis" src="https://img.shields.io/badge/Redis-7-FF4438?style=flat-square&logo=redis&logoColor=white">
-  <img alt="BullMQ" src="https://img.shields.io/badge/BullMQ-6-DC382D?style=flat-square">
-  <img alt="Zod" src="https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white">
-  <img alt="Swagger" src="https://img.shields.io/badge/OpenAPI-Swagger-85EA2D?style=flat-square&logo=swagger&logoColor=white">
-  <img alt="Vitest" src="https://img.shields.io/badge/Vitest-5-6E9F18?style=flat-square&logo=vitest&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?style=flat-square&logo=docker&logoColor=white">
-  <img alt="pnpm" src="https://img.shields.io/badge/pnpm-12-F69220?style=flat-square&logo=pnpm&logoColor=white">
-  <img alt="Oxc" src="https://img.shields.io/badge/Oxc-oxlint%20%2B%20oxfmt-5C4EE5?style=flat-square">
+  <a href="https://github.com/m-honcharenko/snip/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/m-honcharenko/snip/ci.yml?branch=main&style=for-the-badge&label=CI&labelColor=1B73D8&color=1559A8&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDEuNzVDMCAuNzg0Ljc4NCAwIDEuNzUgMGgzLjVDNi4yMTYgMCA3IC43ODQgNyAxLjc1djMuNUExLjc1IDEuNzUgMCAwIDEgNS4yNSA3SDR2NGExIDEgMCAwIDAgMSAxaDR2LTEuMjVDOSA5Ljc4NCA5Ljc4NCA5IDEwLjc1IDloMy41Yy45NjYgMCAxLjc1Ljc4NCAxLjc1IDEuNzV2My41QTEuNzUgMS43NSAwIDAgMSAxNC4yNSAxNmgtMy41QTEuNzUgMS43NSAwIDAgMSA5IDE0LjI1di0uNzVINUEyLjUgMi41IDAgMCAxIDIuNSAxMVY3aC0uNzVBMS43NSAxLjc1IDAgMCAxIDAgNS4yNVptMS43NS0uMjVhLjI1LjI1IDAgMCAwLS4yNS4yNXYzLjVjMCAuMTM4LjExMi4yNS4yNS4yNWgzLjVhLjI1LjI1IDAgMCAwIC4yNS0uMjV2LTMuNWEuMjUuMjUgMCAwIDAtLjI1LS4yNVptOSA5YS4yNS4yNSAwIDAgMC0uMjUuMjV2My41YzAgLjEzOC4xMTIuMjUuMjUuMjVoMy41YS4yNS4yNSAwIDAgMCAuMjUtLjI1di0zLjVhLjI1LjI1IDAgMCAwLS4yNS0uMjVaIi8%2BPC9zdmc%2B"></a>
+  <img alt="Test coverage, Vitest with v8 (unit tests only)" src="https://img.shields.io/badge/coverage-37%25-00662E?style=for-the-badge&labelColor=00843C&logo=vitest&logoColor=white">
+  <img alt="Docker image size" src="https://img.shields.io/badge/image-600%20MB-165F96?style=for-the-badge&labelColor=1D7AC1&logo=docker&logoColor=white">
+  <img alt="Redirect throughput" src="https://img.shields.io/badge/redirect-50k%20req%2Fs-0F101D?style=for-the-badge&labelColor=141526&logo=speedtest&logoColor=white">
 </p>
 
 A URL shortener with click analytics, built with NestJS and TypeScript. The focus is the backend: a fast redirect path (Redis cache), asynchronous analytics (BullMQ), SQL-aggregated statistics, input validation, rate limiting and a test suite that runs against real Postgres and Redis.
@@ -48,6 +32,7 @@ This starts PostgreSQL, Redis, applies the migrations and runs the app on <http:
 
 - Swagger UI: <http://localhost:3000/api>
 - Health check: <http://localhost:3000/health>
+- Bull Board (read-only dashboard of the click queue): <http://localhost:3000/admin/queues>. It is available only outside production, for example with `pnpm start:dev`. The Docker image runs with `NODE_ENV=production`, where the dashboard is disabled.
 
 ```bash
 # create a link

@@ -1,8 +1,22 @@
-import autocannon from 'autocannon';
+import autocannon, { type Result } from 'autocannon';
 import { Redis } from 'ioredis';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import pg from 'pg';
+
+interface Scenario {
+  name: string;
+  env: Record<string, string>;
+}
+
+interface Row {
+  scenario: string;
+  reqPerSec: number;
+  p50: number;
+  p97_5: number;
+  p99: number;
+  errors: number;
+}
 
 const PORT = Number(process.env.BENCH_PORT ?? 3100);
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -13,7 +27,7 @@ const WARMUP = 3;
 const TEST_DB = 'snip_test';
 const TEST_REDIS_DB = 1;
 
-function withPath(url, path) {
+function withPath(url: string, path: string): string {
   const parsed = new URL(url);
   parsed.pathname = path;
   return parsed.toString();
@@ -27,7 +41,7 @@ if (!process.env.DATABASE_URL || !process.env.REDIS_URL) {
 const DATABASE_URL = withPath(process.env.DATABASE_URL, `/${TEST_DB}`);
 const REDIS_URL = withPath(process.env.REDIS_URL, `/${TEST_REDIS_DB}`);
 
-const SCENARIOS = [
+const SCENARIOS: Scenario[] = [
   {
     name: 'A: no cache, no click tracking',
     env: { LINK_CACHE_ENABLED: 'false', CLICK_TRACKING_ENABLED: 'false' },
@@ -43,14 +57,15 @@ const SCENARIOS = [
 ];
 
 // Empty tables and an empty Redis: a clean slate before a scenario, and no leftovers after
-async function cleanUp() {
+async function cleanUp(): Promise<void> {
   const db = new pg.Client({ connectionString: DATABASE_URL });
   try {
     await db.connect();
     await db.query('TRUNCATE TABLE "ClickEvent", "Link" RESTART IDENTITY CASCADE');
   } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Cannot reach the "${TEST_DB}" database (run "pnpm test:e2e" once to create it): ${error.message}`,
+      `Cannot reach the "${TEST_DB}" database (run "pnpm test:e2e" once to create it): ${reason}`,
     );
   } finally {
     await db.end().catch(() => {});
@@ -63,7 +78,7 @@ async function cleanUp() {
   }
 }
 
-async function waitForServer() {
+async function waitForServer(): Promise<void> {
   for (let i = 0; i < 100; i++) {
     try {
       const res = await fetch(`${BASE}/health`);
@@ -76,7 +91,7 @@ async function waitForServer() {
   throw new Error('The server did not start in time');
 }
 
-function startServer(extraEnv) {
+function startServer(extraEnv: Record<string, string>): ChildProcess {
   return spawn('node', ['dist/main'], {
     env: {
       ...process.env,
@@ -90,10 +105,10 @@ function startServer(extraEnv) {
   });
 }
 
-async function stopServer(child) {
+async function stopServer(child: ChildProcess): Promise<void> {
   child.kill('SIGTERM');
-  await new Promise((resolve) => {
-    child.once('exit', resolve);
+  await new Promise<void>((resolve) => {
+    child.once('exit', () => resolve());
     setTimeout(() => {
       child.kill('SIGKILL');
       resolve();
@@ -101,7 +116,7 @@ async function stopServer(child) {
   });
 }
 
-async function createLink() {
+async function createLink(): Promise<string> {
   const res = await fetch(`${BASE}/links`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -110,14 +125,15 @@ async function createLink() {
   if (res.status !== 201) {
     throw new Error(`Could not create a link: HTTP ${res.status}`);
   }
-  return (await res.json()).code;
+  const body = (await res.json()) as { code: string };
+  return body.code;
 }
 
-function run(url, duration) {
+function run(url: string, duration: number): Promise<Result> {
   return autocannon({ url, connections: CONNECTIONS, duration, method: 'GET' });
 }
 
-const rows = [];
+const rows: Row[] = [];
 
 try {
   for (const scenario of SCENARIOS) {
@@ -155,7 +171,7 @@ try {
   await cleanUp();
 }
 
-const baseline = rows[0].reqPerSec;
+const baseline = rows[0]!.reqPerSec;
 console.log('\n| Scenario | req/s | p50 ms | p97.5 ms | p99 ms | errors | vs A |');
 console.log('| --- | ---: | ---: | ---: | ---: | ---: | ---: |');
 for (const row of rows) {

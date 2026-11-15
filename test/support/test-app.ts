@@ -31,7 +31,7 @@ export async function createTestApp() {
 export async function resetState(app: INestApplication) {
   assertTestDatabase();
   await app.get(PrismaService)
-    .$executeRaw`TRUNCATE TABLE "ClickEvent", "Link" RESTART IDENTITY CASCADE`;
+    .$executeRaw`TRUNCATE TABLE "ClickEvent", "Link", "User" RESTART IDENTITY CASCADE`;
   const redis = app.get(RedisService).client;
   const keys = (await redis.keys('*')).filter(
     (key) => !key.startsWith('bull:'),

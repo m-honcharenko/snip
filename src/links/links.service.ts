@@ -6,21 +6,13 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { isUniqueViolation } from '../common/is-unique-violation.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { generateCode } from './code.generator.js';
 import { LinkCacheService } from './link-cache.service.js';
 import type { CreateLinkInput, ListLinksQuery } from './links.schemas.js';
 
 const MAX_ATTEMPTS = 5;
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'P2002'
-  );
-}
 
 function isExpired(expiresAt: Date | null) {
   return expiresAt !== null && expiresAt <= new Date();
@@ -33,7 +25,7 @@ export class LinksService {
     private readonly cache: LinkCacheService,
   ) {}
 
-  async create(input: CreateLinkInput) {
+  async create(userId: number, input: CreateLinkInput) {
     const expiresAt = input.expiresAt ? new Date(input.expiresAt) : null;
     if (expiresAt && expiresAt <= new Date()) {
       throw new BadRequestException('expiresAt must be in the future');
@@ -49,7 +41,12 @@ export class LinksService {
       }
       try {
         return await this.prisma.link.create({
-          data: { code: input.alias, targetUrl: input.url, expiresAt },
+          data: {
+            code: input.alias,
+            targetUrl: input.url,
+            expiresAt,
+            userId,
+          },
         });
       } catch (error) {
         if (isUniqueViolation(error)) {
@@ -62,7 +59,12 @@ export class LinksService {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       try {
         return await this.prisma.link.create({
-          data: { code: generateCode(), targetUrl: input.url, expiresAt },
+          data: {
+            code: generateCode(),
+            targetUrl: input.url,
+            expiresAt,
+            userId,
+          },
         });
       } catch (error) {
         if (!isUniqueViolation(error)) throw error;
@@ -75,8 +77,9 @@ export class LinksService {
     return this.prisma.link.findUnique({ where: { code } });
   }
 
-  async getByCodeOrThrow(code: string) {
-    const link = await this.findByCode(code);
+  // A link of another user looks the same as a missing one: 404, not 403
+  async getOwnedByCodeOrThrow(userId: number, code: string) {
+    const link = await this.prisma.link.findFirst({ where: { code, userId } });
     if (!link) throw new NotFoundException('Link not found');
     return link;
   }
@@ -101,20 +104,27 @@ export class LinksService {
     return link.targetUrl;
   }
 
-  async deleteByCode(code: string): Promise<boolean> {
-    const { count } = await this.prisma.link.deleteMany({ where: { code } });
+  async deleteOwnedByCode(userId: number, code: string): Promise<boolean> {
+    const { count } = await this.prisma.link.deleteMany({
+      where: { code, userId },
+    });
+    // Nothing was deleted: the link is missing or belongs to someone else, and
+    // a stranger must not be able to evict another user's cache entry
+    if (count === 0) return false;
     await this.cache.invalidate(code);
-    return count > 0;
+    return true;
   }
 
-  async list({ page, limit }: ListLinksQuery) {
+  async listOwned(userId: number, { page, limit }: ListLinksQuery) {
+    const where = { userId };
     const [items, total] = await this.prisma.$transaction([
       this.prisma.link.findMany({
+        where,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.link.count(),
+      this.prisma.link.count({ where }),
     ]);
     return { items, total };
   }

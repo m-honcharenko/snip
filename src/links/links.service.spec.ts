@@ -14,6 +14,7 @@ import { LinksService } from './links.service.js';
 vi.mock('./code.generator.js', () => ({ generateCode: vi.fn() }));
 
 const HOUR_MS = 60 * 60 * 1000;
+const USER_ID = 1;
 
 function makeLink(overrides: Record<string, unknown> = {}) {
   return {
@@ -21,6 +22,7 @@ function makeLink(overrides: Record<string, unknown> = {}) {
     code: 'abc1234',
     targetUrl: 'https://example.com',
     expiresAt: null,
+    userId: USER_ID,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
   };
@@ -37,6 +39,7 @@ function createService() {
     link: {
       create: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       deleteMany: vi.fn(),
       count: vi.fn(),
@@ -61,7 +64,7 @@ describe('LinksService.create', () => {
     const { service, prisma } = createService();
     prisma.link.create.mockResolvedValue(makeLink());
 
-    const link = await service.create({ url: 'https://example.com' });
+    const link = await service.create(USER_ID, { url: 'https://example.com' });
 
     expect(link.code).toBe('abc1234');
     expect(prisma.link.create).toHaveBeenCalledWith({
@@ -69,7 +72,24 @@ describe('LinksService.create', () => {
         code: 'abc1234',
         targetUrl: 'https://example.com',
         expiresAt: null,
+        userId: USER_ID,
       },
+    });
+  });
+
+  it('records the owner on a generated-code link and on an alias link', async () => {
+    const { service, prisma } = createService();
+    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.create.mockResolvedValue(makeLink());
+
+    await service.create(42, { url: 'https://example.com' });
+    await service.create(42, { url: 'https://example.com', alias: 'docs' });
+
+    expect(prisma.link.create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({ userId: 42 }),
+    });
+    expect(prisma.link.create).toHaveBeenNthCalledWith(2, {
+      data: expect.objectContaining({ code: 'docs', userId: 42 }),
     });
   });
 
@@ -78,7 +98,7 @@ describe('LinksService.create', () => {
     prisma.link.create.mockResolvedValue(makeLink());
     const expiresAt = new Date(Date.now() + HOUR_MS);
 
-    await service.create({
+    await service.create(USER_ID, {
       url: 'https://example.com',
       expiresAt: expiresAt.toISOString(),
     });
@@ -92,7 +112,7 @@ describe('LinksService.create', () => {
     const { service, prisma } = createService();
 
     await expect(
-      service.create({
+      service.create(USER_ID, {
         url: 'https://example.com',
         expiresAt: new Date(Date.now() - 1000).toISOString(),
       }),
@@ -109,7 +129,7 @@ describe('LinksService.create', () => {
       .mockRejectedValueOnce(uniqueViolation())
       .mockResolvedValueOnce(makeLink({ code: 'second0' }));
 
-    const link = await service.create({ url: 'https://example.com' });
+    const link = await service.create(USER_ID, { url: 'https://example.com' });
 
     expect(link.code).toBe('second0');
     expect(prisma.link.create).toHaveBeenCalledTimes(2);
@@ -123,7 +143,7 @@ describe('LinksService.create', () => {
     prisma.link.create.mockRejectedValue(uniqueViolation());
 
     await expect(
-      service.create({ url: 'https://example.com' }),
+      service.create(USER_ID, { url: 'https://example.com' }),
     ).rejects.toBeInstanceOf(InternalServerErrorException);
     expect(prisma.link.create).toHaveBeenCalledTimes(5);
   });
@@ -133,7 +153,7 @@ describe('LinksService.create', () => {
     prisma.link.create.mockRejectedValue(new Error('connection lost'));
 
     await expect(
-      service.create({ url: 'https://example.com' }),
+      service.create(USER_ID, { url: 'https://example.com' }),
     ).rejects.toThrow('connection lost');
     expect(prisma.link.create).toHaveBeenCalledTimes(1);
   });
@@ -142,9 +162,9 @@ describe('LinksService.create', () => {
     const { service, prisma } = createService();
     prisma.link.create.mockRejectedValue('boom');
 
-    await expect(service.create({ url: 'https://example.com' })).rejects.toBe(
-      'boom',
-    );
+    await expect(
+      service.create(USER_ID, { url: 'https://example.com' }),
+    ).rejects.toBe('boom');
     expect(prisma.link.create).toHaveBeenCalledTimes(1);
   });
 
@@ -153,7 +173,7 @@ describe('LinksService.create', () => {
     prisma.link.create.mockRejectedValue(null);
 
     await expect(
-      service.create({ url: 'https://example.com' }),
+      service.create(USER_ID, { url: 'https://example.com' }),
     ).rejects.toBeNull();
     expect(prisma.link.create).toHaveBeenCalledTimes(1);
   });
@@ -165,7 +185,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.findUnique.mockResolvedValue(null);
     prisma.link.create.mockResolvedValue(makeLink({ code: 'docs' }));
 
-    const link = await service.create({
+    const link = await service.create(USER_ID, {
       url: 'https://example.com',
       alias: 'docs',
     });
@@ -180,6 +200,7 @@ describe('LinksService.create with an alias', () => {
         code: 'docs',
         targetUrl: 'https://example.com',
         expiresAt: null,
+        userId: USER_ID,
       },
     });
   });
@@ -189,7 +210,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.findUnique.mockResolvedValue(makeLink({ code: 'docs' }));
 
     await expect(
-      service.create({ url: 'https://example.com', alias: 'docs' }),
+      service.create(USER_ID, { url: 'https://example.com', alias: 'docs' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.link.create).not.toHaveBeenCalled();
   });
@@ -200,7 +221,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.create.mockRejectedValue(uniqueViolation());
 
     await expect(
-      service.create({ url: 'https://example.com', alias: 'docs' }),
+      service.create(USER_ID, { url: 'https://example.com', alias: 'docs' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.link.create).toHaveBeenCalledTimes(1);
   });
@@ -211,7 +232,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.create.mockRejectedValue(uniqueViolation());
 
     await expect(
-      service.create({ url: 'https://example.com', alias: 'docs' }),
+      service.create(USER_ID, { url: 'https://example.com', alias: 'docs' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(generateCode).not.toHaveBeenCalled();
   });
@@ -222,7 +243,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.create.mockRejectedValue(new Error('connection lost'));
 
     await expect(
-      service.create({ url: 'https://example.com', alias: 'docs' }),
+      service.create(USER_ID, { url: 'https://example.com', alias: 'docs' }),
     ).rejects.toThrow('connection lost');
   });
 
@@ -232,7 +253,7 @@ describe('LinksService.create with an alias', () => {
     prisma.link.create.mockResolvedValue(makeLink({ code: 'docs' }));
     const expiresAt = new Date(Date.now() + HOUR_MS);
 
-    await service.create({
+    await service.create(USER_ID, {
       url: 'https://example.com',
       alias: 'docs',
       expiresAt: expiresAt.toISOString(),
@@ -244,23 +265,26 @@ describe('LinksService.create with an alias', () => {
   });
 });
 
-describe('LinksService.getByCodeOrThrow', () => {
-  it('returns the link', async () => {
+describe('LinksService.getOwnedByCodeOrThrow', () => {
+  it('returns the link of its owner', async () => {
     const { service, prisma } = createService();
-    prisma.link.findUnique.mockResolvedValue(makeLink());
+    prisma.link.findFirst.mockResolvedValue(makeLink());
 
-    await expect(service.getByCodeOrThrow('abc1234')).resolves.toMatchObject({
-      code: 'abc1234',
+    await expect(
+      service.getOwnedByCodeOrThrow(USER_ID, 'abc1234'),
+    ).resolves.toMatchObject({ code: 'abc1234' });
+    expect(prisma.link.findFirst).toHaveBeenCalledWith({
+      where: { code: 'abc1234', userId: USER_ID },
     });
   });
 
-  it('throws NotFoundException for an unknown code', async () => {
+  it('throws NotFoundException for an unknown code or another owner', async () => {
     const { service, prisma } = createService();
-    prisma.link.findUnique.mockResolvedValue(null);
+    prisma.link.findFirst.mockResolvedValue(null);
 
-    await expect(service.getByCodeOrThrow('nope')).rejects.toBeInstanceOf(
-      NotFoundException,
-    );
+    await expect(
+      service.getOwnedByCodeOrThrow(USER_ID, 'nope'),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 
@@ -344,36 +368,44 @@ describe('LinksService.resolveRedirect', () => {
   });
 });
 
-describe('LinksService.deleteByCode', () => {
+describe('LinksService.deleteOwnedByCode', () => {
   it('reports a deletion and invalidates the cache', async () => {
     const { service, prisma, cache } = createService();
     prisma.link.deleteMany.mockResolvedValue({ count: 1 });
 
-    await expect(service.deleteByCode('abc1234')).resolves.toBe(true);
+    await expect(service.deleteOwnedByCode(USER_ID, 'abc1234')).resolves.toBe(
+      true,
+    );
     expect(prisma.link.deleteMany).toHaveBeenCalledWith({
-      where: { code: 'abc1234' },
+      where: { code: 'abc1234', userId: USER_ID },
     });
     expect(cache.invalidate).toHaveBeenCalledWith('abc1234');
   });
 
-  it('reports false when nothing was deleted, but still invalidates', async () => {
+  it('reports false and leaves the cache alone when nothing was deleted', async () => {
     const { service, prisma, cache } = createService();
     prisma.link.deleteMany.mockResolvedValue({ count: 0 });
 
-    await expect(service.deleteByCode('nope')).resolves.toBe(false);
-    expect(cache.invalidate).toHaveBeenCalledWith('nope');
+    await expect(service.deleteOwnedByCode(USER_ID, 'nope')).resolves.toBe(
+      false,
+    );
+    expect(cache.invalidate).not.toHaveBeenCalled();
   });
 });
 
-describe('LinksService.list', () => {
+describe('LinksService.listOwned', () => {
   it('computes skip and take from page and limit', async () => {
     const { service, prisma } = createService();
     prisma.$transaction.mockResolvedValue([[makeLink()], 25]);
 
-    const result = await service.list({ page: 3, limit: 10 });
+    const result = await service.listOwned(USER_ID, { page: 3, limit: 10 });
 
     expect(result).toEqual({ items: [makeLink()], total: 25 });
+    expect(prisma.link.count).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+    });
     expect(prisma.link.findMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: 20,
       take: 10,

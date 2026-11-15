@@ -29,6 +29,7 @@ async function bootstrap() {
     .setTitle('Snip')
     .setDescription('URL shortener API with click analytics')
     .setVersion('1.0')
+    .addBearerAuth()
     .build();
   SwaggerModule.setup('api', app, () =>
     SwaggerModule.createDocument(app, config),

@@ -8,6 +8,8 @@ body:
       "url": "https://example.com/some/long/path"
     }
 headers:
+- name: Authorization
+  value: Bearer ${token}
 - name: Content-Type
   value: application/json
 

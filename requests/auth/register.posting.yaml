@@ -1,0 +1,16 @@
+name: Register
+description: Creates an account and saves the access token. Answers 409 if the email is already registered, then use "Log in".
+method: POST
+url: ${BASE_URL}/auth/register
+body:
+  content: |-
+    {
+      "email": "demo@example.com",
+      "password": "demo-password-123"
+    }
+headers:
+- name: Content-Type
+  value: application/json
+
+scripts:
+  on_response: scripts/save_token.py:on_response

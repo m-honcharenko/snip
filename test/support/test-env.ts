@@ -19,4 +19,6 @@ export const testEnv = {
   DATABASE_URL: withPath(devDatabaseUrl, `/${TEST_DB_NAME}`),
   REDIS_URL: withPath(devRedisUrl, `/${TEST_REDIS_DB}`),
   IP_HASH_SECRET: process.env.IP_HASH_SECRET ?? 'e2e-secret-e2e-secret',
+  JWT_SECRET:
+    process.env.JWT_SECRET ?? 'e2e-jwt-secret-e2e-jwt-secret-0123456789',
 };

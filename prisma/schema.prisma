@@ -7,13 +7,25 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  links        Link[]
+}
+
 model Link {
   id        Int          @id @default(autoincrement())
   code      String       @unique
   targetUrl String
   expiresAt DateTime?
   createdAt DateTime     @default(now())
+  userId    Int?
+  user      User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
   clicks    ClickEvent[]
+
+  @@index([userId, createdAt])
 }
 
 model ClickEvent {

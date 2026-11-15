@@ -5,3 +5,6 @@ url: ${BASE_URL}/links/${last_code}/stats
 params:
 - name: days
   value: '7'
+headers:
+- name: Authorization
+  value: Bearer ${token}

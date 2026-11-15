@@ -8,6 +8,7 @@ import { LinksController } from './links.controller.js';
 import { LinksService } from './links.service.js';
 import { RedirectController } from './redirect.controller.js';
 import { AnalyticsModule } from '../analytics/analytics.module.js';
+import { AuthModule } from '../auth/auth.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AnalyticsModule } from '../analytics/analytics.module.js';
       }),
     }),
     AnalyticsModule,
+    AuthModule,
   ],
   controllers: [LinksController, RedirectController],
   providers: [LinksService, LinkCacheService],

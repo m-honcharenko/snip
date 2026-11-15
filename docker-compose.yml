@@ -55,8 +55,10 @@ services:
       PORT: "3000"
       DATABASE_URL: postgresql://${POSTGRES_USER:-snip}:${POSTGRES_PASSWORD:-snip}@db:5432/${POSTGRES_DB:-snip}
       REDIS_URL: redis://redis:6379
-      # A demo value for local runs: set your own IP_HASH_SECRET in .env
+      # Demo values for local runs: set your own IP_HASH_SECRET and JWT_SECRET in .env
       IP_HASH_SECRET: ${IP_HASH_SECRET:-local-demo-secret-change-me}
+      JWT_SECRET: ${JWT_SECRET:-local-demo-jwt-secret-change-me-please}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
     depends_on:
       migrate:
         condition: service_completed_successfully

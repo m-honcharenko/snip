@@ -2,3 +2,6 @@ name: Delete link
 description: Returns 204, then 404 for the same code.
 method: DELETE
 url: ${BASE_URL}/links/${last_code}
+headers:
+- name: Authorization
+  value: Bearer ${token}
